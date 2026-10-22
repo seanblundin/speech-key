@@ -301,7 +301,7 @@ final class DictationController: FnKeyMonitorDelegate {
             paster.copy(final.trimmingCharacters(in: .whitespaces))
         } else if after == .save {
             // Only the panel's history gets it; the clipboard and the focused app are left alone.
-        } else if Permissions.accessibility {
+        } else if Permissions.paste {
             // "Pasted" waits until the focused app has actually read the text.
             let entry = DictationLog.Entry(time: Date(), app: s.app, raw: raw, final: final, changes: changes.map(\.description),
                                            audioSeconds: audioSeconds, waitSeconds: waitSeconds)
@@ -325,7 +325,7 @@ final class DictationController: FnKeyMonitorDelegate {
             return
         } else {
             paster.copy(final)
-            pill.show(.message("Copied. Allow Accessibility in Settings to paste"), autoHideAfter: 3.5)
+            pill.show(.message("Copied. Allow pasting in Settings › Privacy › Accessibility"), autoHideAfter: 3.5)
             record(.init(time: Date(), app: s.app, raw: raw, final: final, changes: changes.map(\.description),
                          audioSeconds: audioSeconds, waitSeconds: waitSeconds, delivery: "copy"))
             return

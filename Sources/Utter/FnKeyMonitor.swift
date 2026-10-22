@@ -40,7 +40,7 @@ final class FnKeyMonitor {
 
     var isRecording: Bool { machine.isRecording }
 
-    /// Returns false if the tap couldn't be created (no Accessibility permission yet).
+    /// Returns false if the tap couldn't be created (no permission to hear keys yet).
     @discardableResult
     func start() -> Bool {
         guard tap == nil else { return true }
@@ -51,8 +51,14 @@ final class FnKeyMonitor {
             // The tap's run-loop source is on the main run loop, so this is the main thread.
             return MainActor.assumeIsolated { monitor.handle(type: type, event: event) }
         }
+        // The App Store build may only listen, so Esc still cancels but also reaches the app.
+        #if APPSTORE
+        let options: CGEventTapOptions = .listenOnly
+        #else
+        let options: CGEventTapOptions = .defaultTap
+        #endif
         guard let tap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
+            tap: .cgSessionEventTap, place: .headInsertEventTap, options: options,
             eventsOfInterest: CGEventMask(mask), callback: callback,
             userInfo: Unmanaged.passUnretained(self).toOpaque()
         ) else { return false }

@@ -70,6 +70,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Remote control, so Claude can take a snapshot or end a meeting on Sean's behalf:
         //   com.seanblundin.utter.meeting.snapshot / .end
         // There is no remote "start": any app can post these, and starting turns on the mic.
+        // Not in the App Store build, which is for everyone.
+        #if !APPSTORE
         let center = DistributedNotificationCenter.default()
         for (name, action) in [("snapshot", { [weak self] in self?.meeting.snapshot() }),
                                ("end", { [weak self] in self?.meeting.end() })] as [(String, () -> Void)] {
@@ -77,7 +79,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 MainActor.assumeIsolated { action() }
             }
         }
-        UtterLog.write("launch, accessibility \(Permissions.accessibility), mic \(Permissions.mic)")
+        #endif
+        UtterLog.write("launch, keys \(Permissions.keys), paste \(Permissions.paste), mic \(Permissions.mic)")
         let recovered = MeetingRecovery.recoverAll(in: MeetingController.root)
         if let r = recovered.first, r.lines > 0 {
             controller.pill.show(.done("Recovered your last meeting as part \(r.partNumber)"), autoHideAfter: 4)
@@ -158,7 +161,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AppUpdates.start()
 
         let firstLaunch = !UserDefaults.standard.bool(forKey: "setupShown")
-        if firstLaunch || !Permissions.accessibility || !Permissions.globeKeyDoesNothing {
+        if firstLaunch || !Permissions.keys || !Permissions.globeKeyDoesNothing {
             UserDefaults.standard.set(true, forKey: "setupShown")
             setup.show()
         }
@@ -280,14 +283,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// The event tap only works once Accessibility is granted, so keep trying until it is.
+    /// The event tap only works once the key permission is granted, so keep trying until it is.
     @MainActor private func startKeyMonitor() {
-        if Permissions.accessibility, fnMonitor.start() { return }
-        Permissions.promptAccessibility()
+        if Permissions.keys, fnMonitor.start() { return }
+        Permissions.promptKeys()
         accessibilityPoll?.invalidate()
         accessibilityPoll = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] timer in
             MainActor.assumeIsolated {
-                guard let self, Permissions.accessibility, self.fnMonitor.start() else { return }
+                guard let self, Permissions.keys, self.fnMonitor.start() else { return }
                 timer.invalidate()
                 self.refreshIcon()
             }
@@ -360,13 +363,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .loading: m.status = "Loading speech model…"; m.statusColor = .systemOrange
         case .failed(let why): m.status = "Speech model failed: \(why)"; m.statusColor = .systemRed
         case .ready:
-            m.status = Permissions.accessibility ? "Ready" : "Needs Accessibility to hear fn"
-            m.statusColor = Permissions.accessibility ? .systemGreen : .systemOrange
+            m.status = Permissions.keys ? "Ready" : "Needs \(Permissions.keysPaneName) to hear fn"
+            m.statusColor = Permissions.keys ? .systemGreen : .systemOrange
         }
-        m.isReady = controller.engineState == .ready && Permissions.accessibility
+        m.isReady = controller.engineState == .ready && Permissions.keys
         var problems: [PanelModel.Problem] = []
-        if !Permissions.accessibility {
-            problems.append(.init(id: "ax", text: "Speech Key needs Accessibility to hear fn and paste.", button: "Open Settings") {
+        if !Permissions.keys {
+            problems.append(.init(id: "ax", text: "Speech Key needs \(Permissions.keysPaneName) to hear fn.", button: "Open Settings") {
+                Permissions.openKeysSettings()
+            })
+        }
+        if Permissions.keys && !Permissions.paste {
+            problems.append(.init(id: "paste", text: "Allow Speech Key under Accessibility to paste; until then it copies.", button: "Open Settings") {
                 Permissions.openAccessibilitySettings()
             })
         }

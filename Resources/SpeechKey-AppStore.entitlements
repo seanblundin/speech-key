@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The Mac App Store build runs in Apple's sandbox. Hearing fn (Input Monitoring) and sending
+	     ⌘V (post-event access) are allowed there and need no entitlement. -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<!-- The microphone, and meeting mode's call-audio tap. -->
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+	<!-- A glossary file or meetings folder the user picks, remembered across launches. -->
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+	<key>com.apple.security.files.bookmarks.app-scope</key>
+	<true/>
+	<!-- Downloading the speech models on first launch. -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+</dict>
+</plist>

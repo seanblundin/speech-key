@@ -102,7 +102,7 @@ final class GlossaryStore: ObservableObject {
         guard let last = undoStack.last else { return nil }
         guard try read() == last.after else { undoStack.removeAll(); undoLabel = nil; throw Failure.changedSince }
         undoStack.removeLast()
-        try last.before.write(toFile: path, atomically: true, encoding: .utf8)
+        try last.before.write(toFile: path, atomically: UtterPaths.glossaryWritesAtomically, encoding: .utf8)
         undoLabel = undoStack.last?.label
         refresh()
         return "Undid: \(last.label)"
@@ -218,7 +218,7 @@ final class GlossaryStore: ObservableObject {
         f.locale = Locale(identifier: "en_US_POSIX")
         text = text.replacingOccurrences(of: #"\*Last edited: \d{4}-\d{2}-\d{2}\*"#, with: "*Last edited: \(f.string(from: Date()))*",
                                          options: .regularExpression)
-        try text.write(toFile: path, atomically: true, encoding: .utf8)
+        try text.write(toFile: path, atomically: UtterPaths.glossaryWritesAtomically, encoding: .utf8)
         undoStack.append((label, before, text))
         if undoStack.count > 20 { undoStack.removeFirst() }
         undoLabel = label

@@ -6,16 +6,18 @@ import SwiftUI
 final class SetupModel: ObservableObject {
     @Published var mic = false
     @Published var micAsked = false
-    @Published var accessibility = false
+    @Published var keys = false
+    @Published var paste = false
     @Published var globe = false
     @Published var engine: DictationController.EngineState = .loading
 
-    var allDone: Bool { mic && accessibility && globe && engine == .ready }
+    var allDone: Bool { mic && keys && paste && globe && engine == .ready }
 
     func refresh(engine state: DictationController.EngineState) {
         mic = Permissions.mic == .granted
         micAsked = Permissions.mic != .notAsked
-        accessibility = Permissions.accessibility
+        keys = Permissions.keys
+        paste = Permissions.paste
         globe = Permissions.globeKeyDoesNothing
         engine = state
     }
@@ -48,9 +50,19 @@ struct SetupView: View {
                     if model.micAsked { Permissions.openMicrophoneSettings() } else { Permissions.requestMic { _ in } }
                 }
                 Divider().padding(.leading, 38)
-                SetupRow(done: model.accessibility, title: "Accessibility",
+                #if APPSTORE
+                SetupRow(done: model.keys, title: "Input Monitoring",
+                         detail: "To notice the fn key. Speech Key only watches fn and the keys pressed with it.",
+                         button: model.keys ? nil : "Allow") { Permissions.promptKeys(); Permissions.openKeysSettings() }
+                Divider().padding(.leading, 38)
+                SetupRow(done: model.paste, title: "Accessibility",
+                         detail: "To paste where your cursor is. Without it, your words are copied for you to paste.",
+                         button: model.paste ? nil : "Allow") { Permissions.promptKeys(); Permissions.openAccessibilitySettings() }
+                #else
+                SetupRow(done: model.keys, title: "Accessibility",
                          detail: "To notice the fn key and paste where your cursor is.",
-                         button: model.accessibility ? nil : "Open Settings") { Permissions.openAccessibilitySettings() }
+                         button: model.keys ? nil : "Open Settings") { Permissions.openAccessibilitySettings() }
+                #endif
                 Divider().padding(.leading, 38)
                 SetupRow(done: model.globe, title: "Globe key set to Do Nothing",
                          detail: "Keyboard → “Press 🌐 key to” → Do Nothing, so fn doesn’t also open emoji.",

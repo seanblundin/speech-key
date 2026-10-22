@@ -35,7 +35,7 @@ enum PillRenderer {
         }
         // The two windows, with sample content.
         let setupModel = SetupModel()
-        setupModel.mic = true; setupModel.micAsked = true; setupModel.accessibility = false; setupModel.globe = false
+        setupModel.mic = true; setupModel.micAsked = true; setupModel.keys = false; setupModel.paste = false; setupModel.globe = false
         setupModel.engine = .ready
         write(SetupView(model: setupModel, onDone: {}).background(Color(nsColor: .windowBackgroundColor)), to: "\(dir)/7-setup.png")
 

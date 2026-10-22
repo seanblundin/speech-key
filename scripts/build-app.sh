@@ -5,22 +5,37 @@
 # Microphone and Accessibility permissions across rebuilds. Without it the app is ad-hoc
 # signed, and macOS forgets Accessibility after every rebuild.
 #
+# The Mac App Store build: SPEECHKEY_APPSTORE=1 scripts/build-app.sh. It's sandboxed, has no
+# Sparkle, builds in .build-appstore, lands in dist/appstore/ and is never installed over the
+# website build. scripts/release-appstore.sh signs it for Apple and uploads it.
+#
 # Usage: scripts/build-app.sh [--no-install]
 set -e
 cd "$(dirname "$0")/.."
 
-scripts/swift.sh build -c release --product SpeechKey
+if [[ -n "$SPEECHKEY_APPSTORE" ]]; then
+  BUILD=.build-appstore; OUT=dist/appstore; ENTITLEMENTS_BASE=Resources/SpeechKey-AppStore.entitlements
+else
+  BUILD=.build; OUT=dist; ENTITLEMENTS_BASE=Resources/Utter.entitlements
+fi
+scripts/swift.sh build -c release --product SpeechKey --scratch-path "$BUILD"
 
-APP="dist/Speech Key.app"
+APP="$OUT/Speech Key.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp .build/release/SpeechKey "$APP/Contents/MacOS/SpeechKey"
+cp "$BUILD/release/SpeechKey" "$APP/Contents/MacOS/SpeechKey"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+if [[ -n "$SPEECHKEY_APPSTORE" ]]; then
+  # The Store updates the app itself, files it under Productivity, and needs no export paperwork.
+  for k in SUFeedURL SUPublicEDKey SUEnableAutomaticChecks; do /usr/libexec/PlistBuddy -c "Delete :$k" "$APP/Contents/Info.plist"; done
+  /usr/libexec/PlistBuddy -c "Add :LSApplicationCategoryType string public.app-category.productivity" \
+    -c "Add :ITSAppUsesNonExemptEncryption bool false" "$APP/Contents/Info.plist"
+fi
 
 # Licenses that must travel with the app: our credits, then FluidAudio's Apache license and
 # every third-party notice it carries (Settings › Licenses opens this file).
 NOTICES="$APP/Contents/Resources/Acknowledgements.txt"
-FA=.build/checkouts/FluidAudio
+FA=$BUILD/checkouts/FluidAudio
 {
   cat Resources/Credits.txt
   printf '\n------------------------------------------------------------------------\nFluidAudio (https://github.com/FluidInference/FluidAudio)\n------------------------------------------------------------------------\n\n'
@@ -43,8 +58,8 @@ NESTED_FLAGS=(--force --options runtime)
 
 # Sparkle (website build only) goes in Contents/Frameworks. Speech Key isn't sandboxed, so
 # Sparkle's XPC services aren't needed; its pieces are signed inside out, before the app.
-SPARKLE=.build/release/Sparkle.framework
-if [[ -d "$SPARKLE" ]]; then
+SPARKLE=$BUILD/release/Sparkle.framework
+if [[ -z "$SPEECHKEY_APPSTORE" && -d "$SPARKLE" ]]; then
   mkdir -p "$APP/Contents/Frameworks"
   ditto "$SPARKLE" "$APP/Contents/Frameworks/Sparkle.framework"
   FW="$APP/Contents/Frameworks/Sparkle.framework"
@@ -57,10 +72,19 @@ fi
 # Local builds are signed with a self-signed certificate, which has no team ID, so the hardened
 # runtime would refuse to load Sparkle. Only those builds may load it anyway; the Developer ID
 # release signs both with the same team, so it keeps full library validation.
-ENTITLEMENTS=Resources/Utter.entitlements
+ENTITLEMENTS=$ENTITLEMENTS_BASE
+# The real App Store build (scripts/release-appstore.sh) embeds the provisioning profile and
+# names the app and team in its entitlements, as the profile requires.
+if [[ -n "$SPEECHKEY_APPSTORE" && -n "$APPSTORE_PROFILE" ]]; then
+  cp "$APPSTORE_PROFILE" "$APP/Contents/embedded.provisionprofile"
+  ENTITLEMENTS=$(mktemp -t speechkey).plist
+  cp "$ENTITLEMENTS_BASE" "$ENTITLEMENTS"
+  /usr/libexec/PlistBuddy -c "Add :com.apple.application-identifier string C9LAYPTKK8.com.seanblundin.utter" \
+    -c "Add :com.apple.developer.team-identifier string C9LAYPTKK8" "$ENTITLEMENTS"
+fi
 if [[ "$IDENTITY" != Developer\ ID* && -d "$APP/Contents/Frameworks/Sparkle.framework" ]]; then
   ENTITLEMENTS=$(mktemp -t speechkey).plist
-  cp Resources/Utter.entitlements "$ENTITLEMENTS"
+  cp "$ENTITLEMENTS_BASE" "$ENTITLEMENTS"
   /usr/libexec/PlistBuddy -c "Add :com.apple.security.cs.disable-library-validation bool true" "$ENTITLEMENTS"
 fi
 codesign "${NESTED_FLAGS[@]}" --entitlements "$ENTITLEMENTS" --identifier com.seanblundin.utter --sign "$IDENTITY" "$APP"
@@ -70,7 +94,7 @@ else
   echo "Signed with \"$IDENTITY\"."
 fi
 
-if [[ "$1" != "--no-install" ]]; then
+if [[ "$1" != "--no-install" && -z "$SPEECHKEY_APPSTORE" ]]; then
   pkill -x Utter 2>/dev/null || true; pkill -x SpeechKey 2>/dev/null || true; sleep 0.5
   mkdir -p ~/Applications
   rm -rf ~/Applications/Utter.app ~/Applications/SpeechKey.app "$HOME/Applications/Speech Key.app"   # older names

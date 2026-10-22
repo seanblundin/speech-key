@@ -18,13 +18,54 @@ enum Permissions {
         AVCaptureDevice.requestAccess(for: .audio) { ok in DispatchQueue.main.async { done(ok) } }
     }
 
-    /// Needed for the fn-key event tap and for pasting.
-    static var accessibility: Bool { AXIsProcessTrusted() }
+    // The website build uses Accessibility for both hearing fn and pasting (and can swallow Esc).
+    // The App Store build can't: the sandbox allows listening to keys (Input Monitoring) and
+    // sending ⌘V (its own permission, listed under Accessibility), but not the Accessibility API.
 
-    /// Shows macOS's own "allow Accessibility" prompt (once per app identity).
-    static func promptAccessibility() {
+    /// Can hear the fn key.
+    static var keys: Bool {
+        #if APPSTORE
+        CGPreflightListenEventAccess()
+        #else
+        AXIsProcessTrusted()
+        #endif
+    }
+
+    /// Can send ⌘V to paste.
+    static var paste: Bool {
+        #if APPSTORE
+        CGPreflightPostEventAccess()
+        #else
+        AXIsProcessTrusted()
+        #endif
+    }
+
+    /// The name of the Settings pane that grants `keys`, for messages.
+    static var keysPaneName: String {
+        #if APPSTORE
+        "Input Monitoring"
+        #else
+        "Accessibility"
+        #endif
+    }
+
+    /// Shows macOS's own prompts (once per app identity).
+    static func promptKeys() {
+        #if APPSTORE
+        _ = CGRequestListenEventAccess()
+        _ = CGRequestPostEventAccess()
+        #else
         let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
         _ = AXIsProcessTrustedWithOptions([key: true] as CFDictionary)
+        #endif
+    }
+
+    static func openKeysSettings() {
+        #if APPSTORE
+        open("x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")
+        #else
+        openAccessibilitySettings()
+        #endif
     }
 
     /// The system Globe-key action must be "Do Nothing" (0); no app can block it otherwise.

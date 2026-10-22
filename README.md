@@ -44,6 +44,8 @@ scripts/build-app.sh          # build, sign, install to ~/Applications/Speech Ke
 scripts/swift.sh test         # glossary, clean-verbatim, hotkey and correction tests
 ```
 
+`SPEECHKEY_APPSTORE=1 scripts/build-app.sh` builds the sandboxed Mac App Store version instead (no Sparkle, Input Monitoring instead of Accessibility, folders kept as security-scoped bookmarks); `scripts/asc.py setup` and `scripts/release-appstore.sh` sign and upload it.
+
 `build-app.sh` signs with the certificate named in `UTTER_IDENTITY` (default "Local Dictation Dev") and falls back to ad-hoc signing. A stable self-signed certificate keeps macOS permissions across rebuilds. `scripts/release.sh` builds a notarized DMG with a Developer ID certificate.
 
 Test modes (no permission prompts):
