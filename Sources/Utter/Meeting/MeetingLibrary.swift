@@ -11,6 +11,8 @@ struct MeetingMeta: Codable, Equatable {
     var titleBy: String?
     var snapshots: Int?
     var updated: Date?
+    /// The on-device model wouldn't title it; older meetings aren't retried on every launch.
+    var titleFailed: Bool?
 
     static let fileName = ".speechkey-meeting.json"
 

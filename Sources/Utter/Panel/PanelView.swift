@@ -817,6 +817,9 @@ private struct SettingsPage: View {
                             .toggleStyle(.switch).controlSize(.small).font(.system(size: 13))
                         LinkRow("Permissions and setup") { model.actions.showSetup() }
                         LinkRow("Open dictation log") { model.actions.openLog() }
+                        if AppUpdates.available {
+                            LinkRow("Check for updates…") { AppUpdates.checkNow() }
+                        }
                         Divider()
                         // The speech models are CC-BY-4.0, which asks for this credit.
                         Text("Speech recognition by NVIDIA Parakeet TDT 0.6B (Moondream's Ultra fine-tune) and Parakeet CTC 110M, CC-BY-4.0, converted to Core ML by FluidInference. Runs on FluidAudio (Apache-2.0) and Silero VAD (MIT).")

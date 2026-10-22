@@ -33,7 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let i = args.firstIndex(of: name), i + 1 < args.count else { return nil }
             return args[i + 1]
         }
-        let testing = args.contains { $0.hasPrefix("--simulate") || $0 == "--render-pill" || $0 == "--test-meeting" || $0 == "--test-paste" }
+        let testing = args.contains { $0.hasPrefix("--simulate") || $0 == "--render-pill" || $0 == "--test-meeting" || $0 == "--test-paste" || $0 == "--test-titles" }
         if testing { controller.log.enabled = false }
         fnMonitor = FnKeyMonitor()
         setup = SetupWindowController()
@@ -99,6 +99,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if CommandLine.arguments.contains("--demo-pill") { runPillDemo(); return }
         if CommandLine.arguments.contains("--test-paste") { runPasteTest(); return }
+        if let root = arg("--test-titles") {
+            // SpeechKey --test-titles <meetings folder>: titles every untitled meeting without saving,
+            // and prints only whether it worked (never the words, since they're someone's meeting).
+            Task { @MainActor in
+                for m in MeetingLibrary.list(in: URL(fileURLWithPath: root)) where m.title == nil {
+                    guard let text = MeetingLibrary.transcriptText(m.folder) else { print("no transcript  \(m.folder.lastPathComponent)"); continue }
+                    let t0 = Date()
+                    let r = await MeetingTitler.generate(text)
+                    print(String(format: "%@  %@  %.1fs  title %d chars, summary %d chars", r == nil ? "FAILED" : "ok    ",
+                                 m.folder.lastPathComponent, Date().timeIntervalSince(t0), r?.title.count ?? 0, r?.summary.count ?? 0))
+                }
+                NSApp.terminate(nil)
+            }
+            return
+        }
         if let i = CommandLine.arguments.firstIndex(of: "--test-meeting"), i + 2 < CommandLine.arguments.count {
             // Utter --test-meeting <dir> <seconds>: start a meeting, snapshot at half time, end at the end.
             meeting.rootOverride = URL(fileURLWithPath: CommandLine.arguments[i + 1])
@@ -137,7 +152,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if Permissions.mic == .notAsked { Permissions.requestMic { _ in } }
         startKeyMonitor()
-
+        AppUpdates.start()
 
         let firstLaunch = !UserDefaults.standard.bool(forKey: "setupShown")
         if firstLaunch || !Permissions.accessibility || !Permissions.globeKeyDoesNothing {

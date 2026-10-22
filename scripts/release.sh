@@ -40,4 +40,20 @@ perl -e 'alarm 1800; exec @ARGV' xcrun notarytool submit "$DMG" --keychain-profi
 xcrun stapler staple "$DMG"
 
 spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG"
-echo "Ready: $DMG"
+
+# The update feed. dist/updates keeps every Sparkle-era DMG, so the appcast lists them all;
+# generate_appcast signs each with the EdDSA key from the keychain (account "speech-key").
+# Release notes: release-notes/<version>.html, shown in Sparkle's update window.
+UPD=dist/updates
+mkdir -p "$UPD"
+cp "$DMG" "$UPD/"
+[[ -f "release-notes/$VERSION.html" ]] && cp "release-notes/$VERSION.html" "$UPD/Speech-Key-$VERSION.html"
+# generate_keys created the key, so it can read it without a keychain prompt; the copy lives only
+# for this command.
+EDKEY=$(mktemp -t speechkey-ed)
+.build/artifacts/sparkle/Sparkle/bin/generate_keys --account speech-key -x "$EDKEY" >/dev/null
+.build/artifacts/sparkle/Sparkle/bin/generate_appcast --ed-key-file "$EDKEY" \
+  --download-url-prefix https://speechkeyapp.com/ "$UPD" || { rm -f "$EDKEY"; exit 1; }
+rm -f "$EDKEY"
+echo "Ready: $DMG and $UPD/appcast.xml"
+echo "To ship: copy both into utter-site/site, point DOWNLOAD_URL and the redirects at the new DMG, and deploy."
