@@ -27,5 +27,29 @@ enum AppUpdates {
         NSApp.activate(ignoringOtherApps: true)
         controller?.checkForUpdates(nil)
     }
+
+    /// `SpeechKey --test-update-check`: asks the feed whether a newer version exists and prints the
+    /// answer, without showing anything or installing.
+    private static var probeUpdater: SPUUpdater?
+    static func probe() {
+        let updater = SPUUpdater(hostBundle: .main, applicationBundle: .main,
+                                 userDriver: SPUStandardUserDriver(hostBundle: .main, delegate: nil), delegate: ProbeDelegate.shared)
+        probeUpdater = updater
+        do { try updater.start() } catch { print("updater failed to start: \(error)"); NSApp.terminate(nil); return }
+        print("this copy: \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") ?? "?"), feed: \(updater.feedURL?.absoluteString ?? "none")")
+        updater.checkForUpdateInformation()
+    }
+
+    private final class ProbeDelegate: NSObject, SPUUpdaterDelegate {
+        static let shared = ProbeDelegate()
+        func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
+            print("update found: \(item.displayVersionString) (build \(item.versionString)), \(item.fileURL?.absoluteString ?? "")")
+            NSApp.terminate(nil)
+        }
+        func updaterDidNotFindUpdate(_ updater: SPUUpdater) { print("no update: this is the newest"); NSApp.terminate(nil) }
+        func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
+            print("check failed: \(error.localizedDescription)"); NSApp.terminate(nil)
+        }
+    }
     #endif
 }

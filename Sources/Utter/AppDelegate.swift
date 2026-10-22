@@ -33,7 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let i = args.firstIndex(of: name), i + 1 < args.count else { return nil }
             return args[i + 1]
         }
-        let testing = args.contains { $0.hasPrefix("--simulate") || $0 == "--render-pill" || $0 == "--test-meeting" || $0 == "--test-paste" || $0 == "--test-titles" }
+        let testing = args.contains { $0.hasPrefix("--simulate") || $0 == "--render-pill" || $0 == "--test-meeting" || $0 == "--test-paste" || $0 == "--test-titles" || $0 == "--test-update-check" }
         if testing { controller.log.enabled = false }
         fnMonitor = FnKeyMonitor()
         setup = SetupWindowController()
@@ -99,6 +99,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if CommandLine.arguments.contains("--demo-pill") { runPillDemo(); return }
         if CommandLine.arguments.contains("--test-paste") { runPasteTest(); return }
+        #if !APPSTORE
+        if CommandLine.arguments.contains("--test-update-check") { AppUpdates.probe(); return }
+        #endif
         if let root = arg("--test-titles") {
             // SpeechKey --test-titles <meetings folder>: titles every untitled meeting without saving,
             // and prints only whether it worked (never the words, since they're someone's meeting).
