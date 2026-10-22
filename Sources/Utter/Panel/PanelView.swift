@@ -821,7 +821,10 @@ private struct SettingsPage: View {
                         // The speech models are CC-BY-4.0, which asks for this credit.
                         Text("Speech recognition by NVIDIA Parakeet TDT 0.6B (Moondream's Ultra fine-tune) and Parakeet CTC 110M, CC-BY-4.0, converted to Core ML by FluidInference. Runs on FluidAudio (Apache-2.0) and Silero VAD (MIT).")
                             .font(.system(size: 10.5)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
-                        LinkRow("Source code and licenses") {
+                        LinkRow("Licenses") {
+                            if let url = Bundle.main.url(forResource: "Acknowledgements", withExtension: "txt") { NSWorkspace.shared.open(url) }
+                        }
+                        LinkRow("Source code") {
                             NSWorkspace.shared.open(URL(string: "https://github.com/seanblundin/speech-key")!)
                         }
                     }

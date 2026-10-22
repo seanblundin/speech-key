@@ -17,6 +17,20 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/SpeechKey "$APP/Contents/MacOS/SpeechKey"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 
+# Licenses that must travel with the app: our credits, then FluidAudio's Apache license and
+# every third-party notice it carries (Settings › Licenses opens this file).
+NOTICES="$APP/Contents/Resources/Acknowledgements.txt"
+FA=.build/checkouts/FluidAudio
+{
+  cat Resources/Credits.txt
+  printf '\n------------------------------------------------------------------------\nFluidAudio (https://github.com/FluidInference/FluidAudio)\n------------------------------------------------------------------------\n\n'
+  cat "$FA/LICENSE"
+  for f in $(find "$FA/ThirdPartyLicenses" -type f | sort); do
+    printf '\n------------------------------------------------------------------------\nFluidAudio third-party notice: %s\n------------------------------------------------------------------------\n\n' "${f#$FA/ThirdPartyLicenses/}"
+    cat "$f"
+  done
+} > "$NOTICES"
+
 # Regenerate with: swiftc scripts/make-icon.swift -o /tmp/make-icon && /tmp/make-icon /tmp/AppIcon.iconset && iconutil -c icns /tmp/AppIcon.iconset -o Resources/AppIcon.icns
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
