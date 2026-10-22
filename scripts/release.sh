@@ -50,10 +50,11 @@ cp "$DMG" "$UPD/"
 [[ -f "release-notes/$VERSION.html" ]] && cp "release-notes/$VERSION.html" "$UPD/Speech-Key-$VERSION.html"
 # generate_keys created the key, so it can read it without a keychain prompt; the copy lives only
 # for this command.
-EDKEY=$(mktemp -t speechkey-ed)
-.build/artifacts/sparkle/Sparkle/bin/generate_keys --account speech-key -x "$EDKEY" >/dev/null
-.build/artifacts/sparkle/Sparkle/bin/generate_appcast --ed-key-file "$EDKEY" \
-  --download-url-prefix https://speechkeyapp.com/ "$UPD" || { rm -f "$EDKEY"; exit 1; }
-rm -f "$EDKEY"
+# (generate_keys won't export over an existing file, so it gets a fresh path in a private folder.)
+KEYDIR=$(mktemp -d -t speechkey-ed)
+.build/artifacts/sparkle/Sparkle/bin/generate_keys --account speech-key -x "$KEYDIR/key" >/dev/null
+.build/artifacts/sparkle/Sparkle/bin/generate_appcast --ed-key-file "$KEYDIR/key" \
+  --download-url-prefix https://speechkeyapp.com/ "$UPD" || { rm -rf "$KEYDIR"; exit 1; }
+rm -rf "$KEYDIR"
 echo "Ready: $DMG and $UPD/appcast.xml"
 echo "To ship: copy both into utter-site/site, point DOWNLOAD_URL and the redirects at the new DMG, and deploy."
