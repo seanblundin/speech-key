@@ -20,7 +20,7 @@ Download the signed app at **[speechkeyapp.com](https://speechkeyapp.com)**. It 
 
 - **⌃⌥ fn** starts and ends a meeting. **⌃ fn** saves a snapshot of everything so far and copies the file's path.
 - Two streams are transcribed: **Me** (the mic) and **Them** (whatever the Mac plays: Zoom, Meet, Teams, FaceTime).
-- Files are written only when you take a snapshot or end the meeting, to `~/Documents/Speech Key Meetings/<date>_<time>/`. Each part overlaps the previous one by 10 seconds, and `full.md` holds everything.
+- Files are written only when you take a snapshot or end the meeting, to `~/Documents/Speech Key Meetings/2026-10-22_1547_x7bm3z/`. Every file ends with that folder name (`full_2026-10-22_1547_x7bm3z.md` holds everything; each `part-…` overlaps the previous one by 10 seconds), and the six-character code is unique to the meeting, so searching Finder for it finds them all. The Meetings tab shows each meeting's code; click it to copy.
 - Many places require everyone's consent to record a call. Tell people when you start.
 
 ## How it works
