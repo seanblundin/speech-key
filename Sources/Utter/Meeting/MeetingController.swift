@@ -22,7 +22,7 @@ final class MeetingController {
     var onChange: (() -> Void)?
     /// Meetings starting and ending, and snapshots, for History.
     var onEvent: ((AppEvent) -> Void)?
-    /// Writes each meeting's title: at its first snapshot, and again at its end.
+    /// Writes each meeting's title: at every snapshot, and again at its end.
     var titler: MeetingTitler?
     private var snapshotsTaken = 0
     var rootOverride: URL?
@@ -91,7 +91,7 @@ final class MeetingController {
             let n = snapshotsTaken
             MeetingMeta.update(s.folder) { $0.snapshots = n }
             onEvent?(AppEvent(time: Date(), kind: .snapshot, folder: s.folder.path, file: part.file.path, part: part.number, seconds: part.end))
-            titler?.title(s.folder)
+            titler?.title(s.folder, force: true)
             busy = false
         }
     }
@@ -112,7 +112,7 @@ final class MeetingController {
             let summary = (["Meeting saved"] + (n > 0 ? ["\(n) snapshots"] : []) + [MeetingTranscript.clock(result.length)])
                 .joined(separator: " · ")
             pill.show(.done(reason.map { "\($0). \(summary)" } ?? summary), autoHideAfter: 3)
-            copyPath(s.folder.appendingPathComponent("full.md"))
+            copyPath(s.folder.appendingPathComponent(MeetingNames.full(s.folder.lastPathComponent)))
             onChange?()
         }
     }

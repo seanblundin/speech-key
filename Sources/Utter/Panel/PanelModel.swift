@@ -55,6 +55,8 @@ final class PanelModel: ObservableObject {
     /// The history row or meeting just copied, for its "Copied" tick.
     @Published var copied: Date?
     @Published var copiedMeeting: URL?
+    /// The meeting whose code was just copied (for searching Finder).
+    @Published var copiedCode: URL?
     @Published var meetingStartedAt: Date?
     @Published var meetings: [MeetingSummary] = []
     /// Meetings the agent is titling right now.
@@ -204,6 +206,16 @@ final class PanelModel: ObservableObject {
         copiedMeeting = m.folder
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { [weak self] in
             if self?.copiedMeeting == m.folder { self?.copiedMeeting = nil }
+        }
+    }
+
+    /// The meeting's code alone, to paste into Finder's search: it finds the folder and every file.
+    func copyCode(_ m: MeetingSummary) {
+        guard let code = m.code else { return }
+        copy(code)
+        copiedCode = m.folder
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { [weak self] in
+            if self?.copiedCode == m.folder { self?.copiedCode = nil }
         }
     }
 

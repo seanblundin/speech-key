@@ -25,7 +25,7 @@ enum PanelRenderer {
         try? sample.write(toFile: glossaryFile, atomically: true, encoding: .utf8)
 
         let now = Date()
-        let m1 = "/tmp/speechkey-render/2026-11-04_1400", m2 = "/tmp/speechkey-render/2026-11-03_1000"
+        let m1 = "/tmp/speechkey-render/2026-11-04_1400_x7bm3z", m2 = "/tmp/speechkey-render/2026-11-03_1000_k4p9xw"
         func event(_ t: TimeInterval, _ e: AppEvent) -> History.Item {
             History.Item(time: now.addingTimeInterval(t), kind: .event(e.kind), app: nil, text: "", fixes: [], reply: nil,
                          delivery: nil, event: e)
@@ -41,7 +41,7 @@ enum PanelRenderer {
             History.Item(time: now.addingTimeInterval(-80), kind: .command, app: "Messages", text: "Neve should be Niamh.",
                          fixes: [], reply: "Added Neve → Niamh", delivery: nil),
             event(-1500, AppEvent(time: now.addingTimeInterval(-1500), kind: .snapshot, folder: m1,
-                                  file: NSHomeDirectory() + "/Documents/Speech Key Meetings/2026-11-04_1400/part-01_00m00-14m10.md",
+                                  file: NSHomeDirectory() + "/Documents/Speech Key Meetings/2026-11-04_1400_x7bm3z/part-01_00m00-14m10_2026-11-04_1400_x7bm3z.md",
                                   part: 1, seconds: 850)),
             dictation(-1700, "Chat", "Okay, here's the plan for the launch page. Keep it minimal: a header, one demo video, and a few closing lines."),
             event(-2400, AppEvent(time: now.addingTimeInterval(-2400), kind: .meetingStarted, folder: m1)),
@@ -72,9 +72,9 @@ enum PanelRenderer {
                                title: "Weekly design sync",
                                summary: "Reviewed the launch page and agreed to keep it to one video and a short closing.",
                                titleBy: "agent", snapshots: 4),
-                MeetingSummary(folder: URL(fileURLWithPath: "/tmp/speechkey-render/c"), started: now.addingTimeInterval(-200000),
+                MeetingSummary(folder: URL(fileURLWithPath: "/tmp/speechkey-render/2026-11-01_0930_q2hd8n"), started: now.addingTimeInterval(-200000),
                                parts: 1, length: 610),
-                MeetingSummary(folder: URL(fileURLWithPath: "/tmp/speechkey-render/d"), started: now.addingTimeInterval(-300000),
+                MeetingSummary(folder: URL(fileURLWithPath: "/tmp/speechkey-render/2026-10-31_1815_vr6tme"), started: now.addingTimeInterval(-300000),
                                parts: 6, length: 3117, title: "Book club budget", summary: "Dues for the spring and who hosts in March.",
                                titleBy: "you", snapshots: 6),
             ]
@@ -98,7 +98,7 @@ enum PanelRenderer {
         let liveMeetings = makeModel(page: .meetings)
         liveMeetings.meetingStartedAt = now.addingTimeInterval(-751)
         liveMeetings.meetings[0].snapshots = 1
-        liveMeetings.titling = [URL(fileURLWithPath: "/tmp/speechkey-render/c")]
+        liveMeetings.titling = [URL(fileURLWithPath: "/tmp/speechkey-render/2026-11-01_0930_q2hd8n")]
         shots.append(("panel-4b-meetings-live", liveMeetings))
         shots.append(("panel-5-glossary", makeModel(page: .glossary)))
         let used = makeModel(page: .glossary)

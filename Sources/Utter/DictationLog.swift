@@ -113,6 +113,13 @@ struct DictationLog {
         }
     }
 
+    /// Replaces the whole file, one value per line (for one-off fixes like renamed meeting paths).
+    static func rewrite<T: Encodable>(_ values: [T], to url: URL) {
+        var data = Data()
+        for v in values { if let line = try? encoder.encode(v) { data.append(line); data.append(0x0A) } }
+        try? data.write(to: url, options: .atomic)
+    }
+
     static func read<T: Decodable>(_ url: URL) -> [T] {
         guard let data = try? Data(contentsOf: url), let text = String(data: data, encoding: .utf8) else { return [] }
         return text.split(separator: "\n").compactMap { try? decoder.decode(T.self, from: Data($0.utf8)) }

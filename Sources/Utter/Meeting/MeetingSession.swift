@@ -5,7 +5,8 @@ import SpeechEngine
 /// as they go, kept private until Sean takes a snapshot.
 ///
 /// Files only change on a snapshot (Sean didn't want files changing every few seconds):
-/// `<meetings folder>/<date>_<time>/part-NN_XXmYY-XXmYY.md`, `latest.md`, `full.md`.
+/// `<meetings folder>/<date>_<time>_<code>/` with `part-NN_XXmYY-XXmYY_<tag>.md`, `latest_<tag>.md`
+/// and `full_<tag>.md`, the tag being the folder's name (see `MeetingNames`).
 @MainActor
 final class MeetingSession {
     let folder: URL
@@ -67,6 +68,9 @@ final class MeetingSession {
         let url = folder.appendingPathComponent(MeetingRecovery.liveName)
         FileManager.default.createFile(atPath: url.path, contents: nil)
         let h = try? FileHandle(forWritingTo: url)
+        // Held for as long as this meeting records, so recovery in another copy of the app can tell
+        // the meeting is alive. macOS drops the lock if the app dies, so a real crash still recovers.
+        if let h { flock(h.fileDescriptor, LOCK_EX | LOCK_NB) }
         let header = ["started": startedAt.timeIntervalSince1970]
         if let d = try? JSONSerialization.data(withJSONObject: header) { h?.write(d + Data([0x0A])) }
         return h
@@ -78,8 +82,12 @@ final class MeetingSession {
     }
 
     init(root: URL, engine: @escaping () async -> SpeechEngine?, glossary: @escaping () -> Glossary) {
-        self.folder = root.appendingPathComponent(MeetingTranscript.folderName(Date()), isDirectory: true)
-        self.transcript = MeetingTranscript(startedAt: Date())
+        let code = MeetingNames.newCode()
+        let tag = MeetingNames.folder(started: startedAt, code: code)
+        self.folder = root.appendingPathComponent(tag, isDirectory: true)
+        self.transcript = MeetingTranscript(startedAt: startedAt)
+        self.transcript.tag = tag
+        self.transcript.code = code
         self.engine = engine
         self.glossary = glossary
         self.vocabulary = { glossary().boostTerms }
@@ -176,8 +184,8 @@ final class MeetingSession {
         log(["partEnd": end])
         let file = folder.appendingPathComponent(part.fileName)
         try? part.markdown.write(to: file, atomically: true, encoding: .utf8)
-        try? part.markdown.write(to: folder.appendingPathComponent("latest.md"), atomically: true, encoding: .utf8)
-        try? transcript.fullMarkdown(now: end).write(to: folder.appendingPathComponent("full.md"), atomically: true, encoding: .utf8)
+        try? part.markdown.write(to: folder.appendingPathComponent(MeetingNames.latest(folder.lastPathComponent)), atomically: true, encoding: .utf8)
+        try? transcript.fullMarkdown(now: end).write(to: folder.appendingPathComponent(MeetingNames.full(folder.lastPathComponent)), atomically: true, encoding: .utf8)
         return (part.number, file, end)
     }
 

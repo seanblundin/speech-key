@@ -33,7 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let i = args.firstIndex(of: name), i + 1 < args.count else { return nil }
             return args[i + 1]
         }
-        let testing = args.contains { $0.hasPrefix("--simulate") || $0 == "--render-pill" || $0 == "--test-meeting" || $0 == "--test-paste" || $0 == "--test-titles" || $0 == "--test-update-check" }
+        let testing = args.contains { $0.hasPrefix("--simulate") || $0 == "--render-pill" || $0 == "--test-meeting" || $0 == "--test-paste" || $0 == "--test-titles" || $0 == "--test-update-check" || $0 == "--give-codes" }
         if testing { controller.log.enabled = false }
         fnMonitor = FnKeyMonitor()
         setup = SetupWindowController()
@@ -48,6 +48,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         meeting.onChange = { [weak self] in self?.refreshIcon() }
         fnMonitor.onSnapshot = { [weak self] in self?.meeting.snapshot() }
         fnMonitor.onToggleMeeting = { [weak self] in self?.meeting.toggle() }
+
+        // Meeting housekeeping, only in the one real copy of the app: test runs and a second copy
+        // must never touch a meeting folder (a test once marked a live meeting recovered).
+        let alone = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "").count <= 1
+        if !testing && alone {
+            let recovered = MeetingRecovery.recoverAll(in: MeetingController.root)
+            if let r = recovered.first, r.lines > 0 {
+                controller.pill.show(.done("Recovered your last meeting as part \(r.partNumber)"), autoHideAfter: 4)
+            }
+            EventLog.remap(folders: MeetingLibrary.giveCodesToOlderMeetings(in: MeetingController.root))
+        }
 
         history = History(log: controller.log, events: EventLog(enabled: !testing))
         glossaryStore = GlossaryStore(path: arg("--glossary") ?? UtterPaths.glossary)
@@ -81,10 +92,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         #endif
         UtterLog.write("launch, keys \(Permissions.keys), paste \(Permissions.paste), mic \(Permissions.mic)")
-        let recovered = MeetingRecovery.recoverAll(in: MeetingController.root)
-        if let r = recovered.first, r.lines > 0 {
-            controller.pill.show(.done("Recovered your last meeting as part \(r.partNumber)"), autoHideAfter: 4)
-        }
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "SpeechKey")
@@ -105,6 +112,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #if !APPSTORE
         if CommandLine.arguments.contains("--test-update-check") { AppUpdates.probe(); return }
         #endif
+        if let root = arg("--give-codes") {
+            // SpeechKey --give-codes <folder>: the one-time renaming, on a folder you name (a copy).
+            for (old, new) in MeetingLibrary.giveCodesToOlderMeetings(in: URL(fileURLWithPath: root)).sorted(by: { $0.key < $1.key }) {
+                print("\(URL(fileURLWithPath: old).lastPathComponent) → \(URL(fileURLWithPath: new).lastPathComponent)")
+            }
+            NSApp.terminate(nil)
+            return
+        }
         if let root = arg("--test-titles") {
             // SpeechKey --test-titles <meetings folder>: titles every untitled meeting without saving,
             // and prints only whether it worked (never the words, since they're someone's meeting).

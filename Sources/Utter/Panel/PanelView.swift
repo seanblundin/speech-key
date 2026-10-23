@@ -352,8 +352,7 @@ private struct MeetingEventRow: View {
     private var path: String? {
         if let f = e.file { return f }
         guard let folder = e.folder else { return nil }
-        let full = URL(fileURLWithPath: folder).appendingPathComponent("full.md").path
-        return FileManager.default.fileExists(atPath: full) ? full : nil
+        return MeetingLibrary.transcriptFile(URL(fileURLWithPath: folder))?.path
     }
 
     var body: some View {
@@ -584,6 +583,8 @@ private struct MeetingRow: View {
                         Text("·"); Image(systemName: "sparkle").foregroundStyle(PillModel.utterTint); Text("titled by the agent")
                     }
                 }
+                Spacer(minLength: 6)
+                if let code = meeting.code { CodeChip(code: code, copied: model.copiedCode == meeting.folder) { model.copyCode(meeting) } }
             }
             .font(.system(size: 11)).foregroundStyle(.tertiary).lineLimit(1)
         }
@@ -595,6 +596,30 @@ private struct MeetingRow: View {
         .onHover { hovering = $0 }
         .onChange(of: titleFocused) { focused in if !focused && renaming { model.rename(meeting, to: draft) } }
         .help("Click to copy the path: \(meeting.mainFile.path)")
+    }
+}
+
+/// A meeting's six-character code. Click to copy it, then search Finder for it: the folder and
+/// every file in it end with the code (Sean, 2026-10-23).
+private struct CodeChip: View {
+    let code: String
+    let copied: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Text(copied ? "Copied" : code)
+                .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                .foregroundStyle(copied ? AnyShapeStyle(Color(nsColor: .systemGreen)) : hovering ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tertiary))
+                .frame(minWidth: 52)
+                .padding(.horizontal, 5).padding(.vertical, 1.5)
+                .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Color.primary.opacity(hovering ? 0.09 : 0.05)))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help("Copy \(code), then search for it in Finder to find this meeting's files")
     }
 }
 

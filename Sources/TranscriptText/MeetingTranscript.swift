@@ -5,7 +5,8 @@ import Foundation
 /// Rules from MEETING-MODE.md (Sean prefers simple and systematic over clever):
 /// - Part 1 starts at 0:00. Every later part starts a fixed 10 s before the previous part ended.
 /// - Files are named `part-02_12m30-27m05.md` (elapsed time, so the overlap shows in the name).
-/// - `full.md` holds everything so far; `latest.md` is a copy of the newest part.
+/// - `full_<tag>.md` holds everything so far; `latest_<tag>.md` is a copy of the newest part
+///   (names in `MeetingNames`).
 public struct MeetingTranscript: Sendable {
     public struct Line: Sendable, Equatable {
         public let speaker: String
@@ -24,6 +25,11 @@ public struct MeetingTranscript: Sendable {
     public static let me = "Me"
     public static let them = "Them"
     public static let overlap: TimeInterval = 10
+
+    /// The meeting's folder name ("2026-10-22_1547_x7bm3z"), ending every file name; and its
+    /// short code, shown in each file's heading so a search for it finds the files' text too.
+    public var tag: String?
+    public var code: String?
 
     public let startedAt: Date
     public private(set) var lines: [Line] = []
@@ -64,8 +70,8 @@ public struct MeetingTranscript: Sendable {
         let window = nextPartWindow(endingAt: end)
         partEnds.append(window.end)
         let number = partEnds.count
-        let name = String(format: "part-%02d_%@-%@.md", number, Self.stamp(window.start), Self.stamp(window.end))
-        var md = "# Meeting \(Self.dateTime(startedAt)), part \(number)\n\n"
+        let name = MeetingNames.part(number, start: window.start, end: window.end, tag: tag)
+        var md = "# Meeting \(Self.dateTime(startedAt)), part \(number)\(code.map { " · \($0)" } ?? "")\n\n"
         md += "\(Self.clock(window.start))–\(Self.clock(window.end)) into the call"
         if number > 1 { md += ", starting \(Int(Self.overlap)) s before part \(number - 1) ended" }
         md += ".\n\n"
@@ -75,7 +81,7 @@ public struct MeetingTranscript: Sendable {
 
     /// The whole meeting so far.
     public func fullMarkdown(now: TimeInterval) -> String {
-        var md = "# Meeting \(Self.dateTime(startedAt))\n\n"
+        var md = "# Meeting \(Self.dateTime(startedAt))\(code.map { " · \($0)" } ?? "")\n\n"
         md += "Length \(Self.clock(now)) · \(partEnds.count) part\(partEnds.count == 1 ? "" : "s") saved\n\n"
         md += Self.render(lines)
         return md

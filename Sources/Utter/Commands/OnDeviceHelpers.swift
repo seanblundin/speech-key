@@ -9,17 +9,23 @@ import FoundationModels
 
 // MARK: - Meeting titles
 
-/// Writes a short title and a one-line summary for each meeting, in the background, one meeting at
-/// a time. Runs at a meeting's first snapshot and at its end, and once for older meetings that have
-/// none. A title Sean wrote himself is never replaced.
+/// Writes a short title and a one-line summary for every meeting, in the background, one at a
+/// time. A meeting is retitled at each snapshot and again when it ends, since there's more to go on
+/// each time (Sean, 2026-10-23); older meetings without a title get one a minute after launch. A
+/// title Sean wrote himself is never replaced, and a meeting with nothing transcribed is named so.
 @MainActor
 final class MeetingTitler {
     /// Called when a meeting gets its title, so the Meetings tab can refresh.
     var onUpdate: (() -> Void)?
-    /// Meetings being titled right now, for "Writing a title…".
+    /// Meetings being titled now or waiting, for "Writing a title…".
     private(set) var working: Set<URL> = []
     private var queue: [URL] = []
-    private var running = false
+    private var current: URL?
+    /// Asked for again while being titled (a snapshot landed): title once more with the new words.
+    private var again: Set<URL> = []
+    /// The model refused or failed this many times: older meetings stop being retried at launch.
+    static let maxAttempts = 3
+    static let noTranscript = "No transcript"
 
     var isAvailable: Bool {
         #if canImport(FoundationModels)
@@ -28,12 +34,12 @@ final class MeetingTitler {
         return false
     }
 
-    /// Queues a meeting. `force`: title it again even if it has an agent-written title (at the end).
+    /// Queues a meeting. `force`: title it again even if the agent already did (snapshots, the end).
     func title(_ folder: URL, force: Bool = false) {
-        guard isAvailable else { return }
         let meta = MeetingMeta.load(folder)
         if meta?.titleBy == "you" { return }
         if !force, meta?.title != nil { return }
+        if folder == current { again.insert(folder); return }
         if !queue.contains(folder) { queue.append(folder) }
         working.insert(folder)
         onUpdate?()
@@ -43,37 +49,44 @@ final class MeetingTitler {
     /// Titles every meeting that has none, newest first.
     func backfill(root: URL) {
         for m in MeetingLibrary.list(in: root) where m.title == nil && m.titleBy != "you"
-            && MeetingMeta.load(m.folder)?.titleFailed != true { title(m.folder) }
+            && (MeetingMeta.load(m.folder)?.titleAttempts ?? 0) < Self.maxAttempts { title(m.folder) }
     }
 
     private func pump() {
-        guard !running, let folder = queue.first else { return }
-        running = true
+        guard current == nil, !queue.isEmpty else { return }
+        let folder = queue.removeFirst()
+        current = folder
         Task { @MainActor in
-            defer {
-                queue.removeAll { $0 == folder }
-                working.remove(folder)
-                running = false
-                onUpdate?()
-                pump()
-            }
-            guard let text = MeetingLibrary.transcriptText(folder) else { return }
-            let started = Date()
-            guard let result = await Self.generate(text) else {
-                // Don't retry this one on every launch; the meeting's end still tries again.
-                MeetingMeta.update(folder) { $0.titleFailed = true }
-                return
-            }
-            // Sean may have typed a title meanwhile.
-            if MeetingMeta.load(folder)?.titleBy == "you" { return }
-            MeetingMeta.update(folder) { m in
-                m.title = result.title
-                m.summary = result.summary
-                m.titleBy = "agent"
-                m.titleFailed = nil
-            }
-            UtterLog.write(String(format: "meeting titled in %.1fs: %@", Date().timeIntervalSince(started), folder.lastPathComponent))
+            await titleNow(folder)
+            current = nil
+            if again.remove(folder) != nil { queue.insert(folder, at: 0) } else { working.remove(folder) }
+            onUpdate?()
+            pump()
         }
+    }
+
+    private func titleNow(_ folder: URL) async {
+        guard let text = MeetingLibrary.transcriptText(folder) else {
+            // Nothing was transcribed. Say so once the meeting is over (a live one may still get words).
+            let live = FileManager.default.fileExists(atPath: folder.appendingPathComponent(MeetingRecovery.liveName).path)
+            if !live { MeetingMeta.update(folder) { $0.title = Self.noTranscript; $0.summary = nil; $0.titleBy = "agent" } }
+            return
+        }
+        guard isAvailable else { return }
+        let started = Date()
+        guard let result = await Self.generate(text) else {
+            MeetingMeta.update(folder) { $0.titleAttempts = ($0.titleAttempts ?? 0) + 1 }
+            return
+        }
+        // Sean may have typed a title meanwhile.
+        if MeetingMeta.load(folder)?.titleBy == "you" { return }
+        MeetingMeta.update(folder) { m in
+            m.title = result.title
+            m.summary = result.summary
+            m.titleBy = "agent"
+            m.titleAttempts = nil
+        }
+        UtterLog.write(String(format: "meeting titled in %.1fs: %@", Date().timeIntervalSince(started), folder.lastPathComponent))
     }
 
     static func generate(_ transcript: String) async -> (title: String, summary: String)? {

@@ -11,8 +11,8 @@ struct MeetingMeta: Codable, Equatable {
     var titleBy: String?
     var snapshots: Int?
     var updated: Date?
-    /// The on-device model wouldn't title it; older meetings aren't retried on every launch.
-    var titleFailed: Bool?
+    /// Times the on-device model failed to title it; after a few, older meetings aren't retried.
+    var titleAttempts: Int?
 
     static let fileName = ".speechkey-meeting.json"
 
@@ -45,7 +45,7 @@ struct MeetingSummary: Identifiable, Equatable {
     let folder: URL
     let started: Date
     let parts: Int
-    /// From the last part's file name ("part-04_28m31-51m57.md" → 51:57).
+    /// From the last part's file name ("part-04_28m31-51m57…" → 51:57).
     let length: TimeInterval?
     var title: String? = nil
     var summary: String? = nil
@@ -57,15 +57,11 @@ struct MeetingSummary: Identifiable, Equatable {
 
     var snapshotCount: Int { snapshots ?? MeetingTranscript.snapshotCount(parts: parts) }
 
+    /// The six-character code that ends the folder and every file name, for searching in Finder.
+    var code: String? { MeetingNames.code(ofFolder: folder.lastPathComponent) }
+
     /// What opens when Sean clicks the meeting: the whole transcript if there is one.
-    var mainFile: URL {
-        let fm = FileManager.default
-        for name in ["full.md", "latest.md"] {
-            let url = folder.appendingPathComponent(name)
-            if fm.fileExists(atPath: url.path) { return url }
-        }
-        return folder
-    }
+    var mainFile: URL { MeetingLibrary.transcriptFile(folder) ?? folder }
 }
 
 enum MeetingLibrary {
@@ -73,10 +69,10 @@ enum MeetingLibrary {
         let fm = FileManager.default
         guard let folders = try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else { return [] }
         let summaries: [MeetingSummary] = folders.compactMap { folder in
-            guard let started = folderDate.date(from: folder.lastPathComponent) else { return nil }
+            guard let started = startDate(folder.lastPathComponent) else { return nil }
             let files = (try? fm.contentsOfDirectory(atPath: folder.path)) ?? []
-            let parts = files.filter { $0.hasPrefix("part-") && $0.hasSuffix(".md") }
-            let length = parts.compactMap(endSeconds).max()
+            let parts = files.filter(MeetingNames.isPart)
+            let length = parts.compactMap(MeetingNames.partEnd).max()
             let meta = MeetingMeta.load(folder)
             return MeetingSummary(folder: folder, started: started, parts: parts.count, length: length,
                                   title: meta?.title, summary: meta?.summary, titleBy: meta?.titleBy, snapshots: meta?.snapshots)
@@ -84,25 +80,26 @@ enum MeetingLibrary {
         return Array(summaries.sorted { $0.started > $1.started }.prefix(limit))
     }
 
-    /// "part-04_28m31-51m57.md" → 3117.
-    static func endSeconds(_ name: String) -> TimeInterval? {
-        guard let dash = name.lastIndex(of: "-"), let dot = name.lastIndex(of: ".") else { return nil }
-        let stamp = name[name.index(after: dash)..<dot]   // "51m57"
-        let bits = stamp.split(separator: "m")
-        guard bits.count == 2, let m = Double(bits[0]), let s = Double(bits[1]) else { return nil }
-        return m * 60 + s
+    /// "2026-10-22_1547" or "2026-10-22_1547_x7bm3z" → when the meeting started.
+    static func startDate(_ folderName: String) -> Date? {
+        guard folderName.count == 15 || MeetingNames.code(ofFolder: folderName) != nil else { return nil }
+        return folderDate.date(from: String(folderName.prefix(15)))
+    }
+
+    /// The whole-meeting transcript (`full_<tag>.md`, or `full.md` in older folders), else the latest part.
+    static func transcriptFile(_ folder: URL) -> URL? {
+        let files = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        let name = files.first(where: MeetingNames.isFull) ?? files.first(where: MeetingNames.isLatest)
+        return name.map { folder.appendingPathComponent($0) }
     }
 
     /// The meeting's words for titling: the whole transcript if it exists, else every part in order.
     /// Timestamps are dropped ("**[12:34] Me:** hi" → "Me: hi"), since the model's context is small.
     static func transcriptText(_ folder: URL) -> String? {
         let fm = FileManager.default
-        var text: String?
-        for name in ["full.md", "latest.md"] {
-            if let t = try? String(contentsOf: folder.appendingPathComponent(name), encoding: .utf8) { text = t; break }
-        }
+        var text = transcriptFile(folder).flatMap { try? String(contentsOf: $0, encoding: .utf8) }
         if text == nil {
-            let parts = ((try? fm.contentsOfDirectory(atPath: folder.path)) ?? []).filter { $0.hasPrefix("part-") }.sorted()
+            let parts = ((try? fm.contentsOfDirectory(atPath: folder.path)) ?? []).filter(MeetingNames.isPart).sorted()
             let joined = parts.compactMap { try? String(contentsOf: folder.appendingPathComponent($0), encoding: .utf8) }.joined(separator: "\n")
             text = joined.isEmpty ? nil : joined
         }
@@ -112,6 +109,44 @@ enum MeetingLibrary {
             .map { $0.replacingOccurrences(of: #"^\*\*\[[0-9:]+\] (\w+):\*\*"#, with: "$1:", options: .regularExpression) }
             .joined(separator: "\n")
         return speech.isEmpty ? nil : speech
+    }
+
+    /// Gives every older meeting a code: the folder becomes "2026-10-20_1157_k4p9xw", and the files
+    /// Speech Key wrote in it end with that name too (`MeetingNames`). Files other tools put there
+    /// are left alone, and so is a meeting that's still recording. Each file's first heading gets
+    /// the code, so searching file contents finds it too. Returns old folder path → new.
+    @discardableResult
+    static func giveCodesToOlderMeetings(in root: URL) -> [String: String] {
+        let fm = FileManager.default
+        guard let folders = try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else { return [:] }
+        var taken = Set(folders.compactMap { MeetingNames.code(ofFolder: $0.lastPathComponent) })
+        var moved: [String: String] = [:]
+        for folder in folders where folder.lastPathComponent.count == 15 && startDate(folder.lastPathComponent) != nil {
+            if fm.fileExists(atPath: folder.appendingPathComponent(MeetingRecovery.liveName).path) { continue }
+            var code = MeetingNames.newCode()
+            while taken.contains(code) { code = MeetingNames.newCode() }
+            taken.insert(code)
+            let tag = folder.lastPathComponent + "_" + code
+            for name in (try? fm.contentsOfDirectory(atPath: folder.path)) ?? [] {
+                guard let new = MeetingNames.renamed(name, tag: tag) else { continue }
+                let url = folder.appendingPathComponent(name)
+                if var text = try? String(contentsOf: url, encoding: .utf8), text.hasPrefix("# Meeting "),
+                   let end = text.firstIndex(of: "\n") {
+                    text.insert(contentsOf: " · \(code)", at: end)
+                    try? text.write(to: url, atomically: true, encoding: .utf8)
+                }
+                try? fm.moveItem(at: url, to: folder.appendingPathComponent(new))
+            }
+            let target = root.appendingPathComponent(tag, isDirectory: true)
+            do {
+                try fm.moveItem(at: folder, to: target)
+                moved[folder.path] = target.path
+            } catch {
+                UtterLog.write("couldn't rename \(folder.lastPathComponent): \(error.localizedDescription)")
+            }
+        }
+        if !moved.isEmpty { UtterLog.write("gave codes to \(moved.count) older meetings") }
+        return moved
     }
 
     static let folderDate: DateFormatter = {

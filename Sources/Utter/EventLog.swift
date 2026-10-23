@@ -1,4 +1,5 @@
 import Foundation
+import TranscriptText
 
 /// Everything besides dictations that belongs in History: meetings starting and ending,
 /// snapshots, and glossary changes. Text only, in `events.jsonl` next to the dictation log.
@@ -39,4 +40,24 @@ struct EventLog {
     func append(_ event: AppEvent) { if enabled { DictationLog.write(event, to: Self.file) } }
 
     static func all() -> [AppEvent] { DictationLog.read(file) }
+
+    /// Points events at meeting folders that were renamed (old folder path → new), and their files
+    /// at the files' new names.
+    static func remap(folders: [String: String]) {
+        guard !folders.isEmpty else { return }
+        let events: [AppEvent] = DictationLog.read(file)
+        var changed = false
+        let moved = events.map { e -> AppEvent in
+            guard let old = e.folder, let new = folders[old] else { return e }
+            var e = e
+            e.folder = new
+            if let f = e.file, f.hasPrefix(old + "/") {
+                let name = String(f.dropFirst(old.count + 1))
+                e.file = new + "/" + (MeetingNames.renamed(name, tag: URL(fileURLWithPath: new).lastPathComponent) ?? name)
+            }
+            changed = true
+            return e
+        }
+        if changed { DictationLog.rewrite(moved, to: file) }
+    }
 }
