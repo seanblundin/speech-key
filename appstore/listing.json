@@ -1,0 +1,14 @@
+{
+  "name": "Speech Key",
+  "subtitle": "Hold the globe key and talk",
+  "promotionalText": "Hold 🌐, talk, let go: your words land wherever you're typing, with names spelled the way you spell them. It all runs on your Mac. No account, no cloud.",
+  "description": "Hold the globe key and talk. Let go, and your words appear wherever you're typing: email, chat, notes, code, anywhere.\n\nSpeech Key turns speech into text right on your Mac, on the Neural Engine. Nothing you say is sent anywhere, and audio is never saved.\n\nYOUR NAMES, SPELLED RIGHT\nTeach Speech Key the names it gets wrong, once. Fix a word in History and it offers to remember it, or say \"Neve should be Niamh\" while holding ⇧ and the globe key. Your glossary is a plain table you can edit, sort and search, and a fix can depend on context (\"only in book club talk\").\n\nFAST\nLong dictations are transcribed while you talk, so your text is ready in under a second after you let go.\n\nHANDS-FREE\nDouble-tap the globe key for long dictations, and tap it again to finish.\n\nMEETINGS\nPress ⌃⌥ and the globe key to transcribe a call: your microphone as \"Me\" and the call as \"Them\", in Zoom, Meet, Teams or FaceTime. Snapshots save everything so far to a file you can paste into an AI assistant mid-call. Each meeting gets a title and a one-line summary, written on your Mac.\n\nHISTORY\nEverything you dictated, newest first. Click to copy it again.\n\nPRIVATE BY DESIGN\nNo account, no analytics, no tracking. The speech model downloads once (about 0.5 GB) and then Speech Key works offline.\n\nSpeech Key is free and open source.",
+  "keywords": "dictation,speech to text,voice typing,transcribe,meeting notes,offline,private,voice,typing,talk",
+  "supportUrl": "https://speechkeyapp.com",
+  "marketingUrl": "https://speechkeyapp.com",
+  "privacyPolicyUrl": "https://speechkeyapp.com/privacy",
+  "primaryCategory": "PRODUCTIVITY",
+  "secondaryCategory": "UTILITIES",
+  "copyright": "2026 Sean Blundin",
+  "reviewNotes": "Speech Key is a dictation app: hold the globe (fn) key, speak, and release; the text is pasted into the focused app.\n\nTo test:\n1. On first launch the setup window lists what's needed. Allow the Microphone; allow Speech Key under Input Monitoring (so it can notice the globe key) and under Accessibility (so it can paste with ⌘V; without it, text is copied instead).\n2. In System Settings > Keyboard, set \"Press 🌐 key to\" to \"Do Nothing\", so the key doesn't also open the emoji picker.\n3. The speech model downloads on first launch (about 0.5 GB); the menu-bar panel shows when it's ready.\n4. Open TextEdit, hold the globe key, say a sentence, and release. The words appear in TextEdit.\n\nMeeting mode (⌃⌥ + globe) also needs System Audio Recording to transcribe call audio. No account or sign-in is needed. Everything runs on the device; nothing is collected or sent."
+}

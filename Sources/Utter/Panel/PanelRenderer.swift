@@ -19,8 +19,11 @@ enum PanelRenderer {
         | Eli | Elias Moreno | only in book club talk |
         | cube cuddle | kubectl |  |
         | Pree a, Priyah | Priya | client, onboarding project |
+        | Fig ma | Figma |  |
+        | sequel light | SQLite |  |
+        | Mao | Mau | Maya's dog |
         |  | Kubernetes | listen for it |
-        | Dworkin | Dariush | unconfirmed · a podcast host |
+        | Ava Lynn | Avelyn | unconfirmed · new client? |
         """
         try? sample.write(toFile: glossaryFile, atomically: true, encoding: .utf8)
 
@@ -98,7 +101,8 @@ enum PanelRenderer {
         let liveMeetings = makeModel(page: .meetings)
         liveMeetings.meetingStartedAt = now.addingTimeInterval(-751)
         liveMeetings.meetings[0].snapshots = 1
-        liveMeetings.titling = [URL(fileURLWithPath: "/tmp/speechkey-render/2026-11-01_0930_q2hd8n")]
+        liveMeetings.meetings[2].title = "Hiring plan for spring"
+        liveMeetings.meetings[2].summary = "Two engineers by March; Maya drafts the posting this week."
         shots.append(("panel-4b-meetings-live", liveMeetings))
         shots.append(("panel-5-glossary", makeModel(page: .glossary)))
         let used = makeModel(page: .glossary)

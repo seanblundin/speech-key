@@ -1,0 +1,64 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<!-- Mac App Store screenshots, 1440×900 at 2× = 2880×1800. Render: scripts/make-screenshots.sh -->
+<style>
+  :root { --muted: #9b9ba6; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 1440px; height: 900px; overflow: hidden; background: #0a0a0c; }
+  body { font-family: -apple-system, "SF Pro Display", system-ui, sans-serif; color: #fff; -webkit-font-smoothing: antialiased;
+    background: radial-gradient(1100px 700px at 78% 40%, rgba(122,140,255,.16), transparent 60%),
+                radial-gradient(900px 600px at 12% 90%, rgba(168,148,255,.10), transparent 60%), #0a0a0c; }
+  .bar { position: absolute; top: 0; left: 0; right: 0; height: 30px; background: rgba(255,255,255,.06); border-bottom: 1px solid rgba(255,255,255,.06);
+    display: flex; align-items: center; justify-content: flex-end; gap: 22px; padding: 0 22px; font-size: 13px; color: rgba(255,255,255,.75); }
+  .bar .wave { display: flex; gap: 2px; align-items: center; height: 16px; padding: 3px 7px; border-radius: 5px; background: rgba(255,255,255,.16); }
+  .bar .wave i { width: 2px; border-radius: 1px; background: #fff; }
+  .bar .dot { width: 14px; height: 9px; border-radius: 3px; border: 1.5px solid rgba(255,255,255,.6); }
+  .copy { position: absolute; left: 112px; top: 0; bottom: 0; width: 560px; display: flex; flex-direction: column; justify-content: center; }
+  .eyebrow { font-size: 17px; letter-spacing: .14em; text-transform: uppercase; color: rgba(198,185,255,.85); font-weight: 600; margin-bottom: 22px; }
+  h1 { margin: 0; font-size: 74px; line-height: 1.02; letter-spacing: -.045em; font-weight: 680;
+    background: linear-gradient(180deg, #fff 40%, #b9b9c3); -webkit-background-clip: text; color: transparent; }
+  h1 .kc { display: inline-flex; align-items: center; justify-content: center; width: 1.05em; height: 1.05em; vertical-align: -.12em;
+    border-radius: .2em; border: 2px solid rgba(255,255,255,.22); background: rgba(255,255,255,.06); -webkit-text-fill-color: initial; }
+  h1 .kc svg { width: .58em; height: .58em; }
+  p.sub { margin: 28px 0 0; font-size: 25px; line-height: 1.42; color: var(--muted); letter-spacing: -.01em; max-width: 30ch; }
+  .panel { position: absolute; top: 40px; right: 150px; width: 460px; border-radius: 16px; overflow: hidden;
+    box-shadow: 0 40px 90px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.09); }
+  .panel img { display: block; width: 460px; }
+  .pill { position: absolute; width: 360px; }
+  .doc { position: absolute; right: 120px; top: 150px; width: 640px; border-radius: 14px; background: #1b1c21;
+    box-shadow: 0 40px 90px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.09); overflow: hidden; }
+  .doc .tl { display: flex; gap: 8px; padding: 16px 18px; border-bottom: 1px solid rgba(255,255,255,.07); }
+  .doc .tl i { width: 12px; height: 12px; border-radius: 50%; background: #3a3b42; }
+  .doc .row { padding: 13px 26px; border-bottom: 1px solid rgba(255,255,255,.06); font-size: 17px; color: #8e8e98; }
+  .doc .row b { color: #e8e8ee; font-weight: 500; margin-left: 8px; }
+  .doc .body { padding: 26px 26px 120px; font-size: 21px; line-height: 1.55; color: #e8e8ee; }
+  .doc .fresh { background: rgba(168,148,255,.30); border-radius: 4px; }
+  .caret { display: inline-block; width: 2px; height: 1.1em; background: #7aa2ff; vertical-align: -.2em; margin-left: 2px; }
+</style></head>
+<body>
+<div class="bar"><span class="dot"></span><span class="wave"><i style="height:5px"></i><i style="height:10px"></i><i style="height:14px"></i><i style="height:8px"></i><i style="height:12px"></i><i style="height:6px"></i></span><span>Thu 9:41 AM</span></div>
+<div id="stage"></div>
+<script>
+const GLOBE = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6"><circle cx="12" cy="12" r="9.2"/><path d="M2.8 12h18.4M12 2.8c2.6 2.6 3.9 5.6 3.9 9.2s-1.3 6.6-3.9 9.2M12 2.8C9.4 5.4 8.1 8.4 8.1 12s1.3 6.6 3.9 9.2"/></svg>';
+const shots = {
+  1: { eyebrow: "Dictation for your Mac", h: `Hold <span class="kc">${GLOBE}</span><br>and talk.`,
+       sub: "Let go, and your words appear wherever you're typing. It all runs on your Mac.",
+       ui: `<div class="doc"><div class="tl"><i></i><i></i><i></i></div>
+              <div class="row">To:<b>Maya Chen</b></div><div class="row">Subject:<b>Launch page</b></div>
+              <div class="body">Hi Maya,<br><br><span class="fresh">Can we push the design review to Thursday at two? Niamh wants one more pass on the closing lines.</span><span class="caret"></span></div></div>
+            <img class="pill" src="src/5-done-clear.png" style="left:780px; top:720px">` },
+  2: { eyebrow: "Your glossary", h: "Your names,<br>spelled right.",
+       sub: "Fix a word once, or just say “Neve should be Niamh.” Speech Key remembers it from then on.",
+       ui: `<div class="panel"><img src="src/panel-5-glossary-dark.png"></div>
+            <img class="pill" src="src/9-utter-done-clear.png" style="left:880px; top:742px">` },
+  3: { eyebrow: "Meetings", h: "Every call,<br>transcribed.",
+       sub: "Your mic as Me, the call as Them. Snapshot any moment; each meeting gets a title, written on your Mac.",
+       ui: `<div class="panel"><img src="src/panel-4b-meetings-live-dark.png"></div>` },
+  4: { eyebrow: "History", h: "Everything you said,<br>one click away.", size: 64,
+       sub: "Every dictation, newest first. Click to copy it again, or double-click to fix a word.",
+       ui: `<div class="panel"><img src="src/panel-1-history-dark.png"></div>` },
+};
+const s = shots[new URLSearchParams(location.search).get("n") || 1];
+document.getElementById("stage").innerHTML = `<div class="copy"><div class="eyebrow">${s.eyebrow}</div><h1 style="${s.size ? `font-size:${s.size}px` : ""}">${s.h}</h1><p class="sub">${s.sub}</p></div>${s.ui}`;
+</script>
+</body></html>
