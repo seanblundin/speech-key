@@ -82,11 +82,17 @@ final class MeetingTitler {
         if MeetingMeta.load(folder)?.titleBy == "you" { return }
         MeetingMeta.update(folder) { m in
             m.title = result.title
-            m.summary = result.summary
+            m.summary = Self.shortSummary(result.summary)
             m.titleBy = "agent"
             m.titleAttempts = nil
         }
         UtterLog.write(String(format: "meeting titled in %.1fs: %@", Date().timeIntervalSince(started), folder.lastPathComponent))
+    }
+
+    /// The panel shows two lines, and the model sometimes writes a paragraph: keep the first sentence.
+    static func shortSummary(_ s: String) -> String {
+        guard s.count > 160, let end = s.range(of: #"[.!?](\s|$)"#, options: .regularExpression) else { return s }
+        return String(s[..<end.upperBound]).trimmingCharacters(in: .whitespaces)
     }
 
     static func generate(_ transcript: String) async -> (title: String, summary: String)? {
@@ -141,7 +147,21 @@ enum OnDeviceMeetingTitle {
                 Title: a plain title of 3 to 6 words naming what the meeting was about, with no quotes and no date
                 Summary: one plain sentence under 20 words saying what was discussed or decided
                 """, options: GenerationOptions(sampling: .greedy, maximumResponseTokens: 80))
-            return parse(r.content)
+            if let parsed = parse(r.content) { return parsed }
+            // It ignored the two-line format (seen on a long meeting, 2026-10-23): ask for each part alone.
+            let material2 = String(material.prefix(piece))
+            let t = try await LanguageModelSession(model: model, instructions: instructions).respond(
+                to: "Reply with only a plain title of 3 to 6 words for this meeting, nothing else.\n\n\(material2)",
+                options: GenerationOptions(sampling: .greedy, maximumResponseTokens: 24)).content
+            let s = try await LanguageModelSession(model: model, instructions: instructions).respond(
+                to: "In one plain sentence under 20 words, say what this meeting discussed or decided.\n\n\(material2)",
+                options: GenerationOptions(sampling: .greedy, maximumResponseTokens: 50)).content
+            let title = (t.split(separator: "\n").first.map(String.init) ?? "")
+                .replacingOccurrences(of: "*", with: "")
+                .replacingOccurrences(of: #"^(?i)title:\s*"#, with: "", options: .regularExpression)
+                .trimmingCharacters(in: CharacterSet(charactersIn: " \"“”.#"))
+            guard !title.isEmpty, title.split(separator: " ").count <= 10 else { return nil }
+            return (title, s.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "*", with: ""))
         } catch {
             UtterLog.write("meeting title failed: \(error)")
             return nil
@@ -151,14 +171,16 @@ enum OnDeviceMeetingTitle {
     /// "Title: Launch page review\nSummary: …" → the two parts, without markdown or quotes.
     static func parse(_ text: String) -> (title: String, summary: String)? {
         var title = "", summary = ""
-        let junk = CharacterSet(charactersIn: " *_\"“”.")
+        let junk = CharacterSet(charactersIn: " \"“”.#")
         for line in text.split(separator: "\n") {
-            let l = line.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "*_"))
-            if l.lowercased().hasPrefix("title:") { title = String(l.dropFirst(6)).trimmingCharacters(in: junk) }
-            else if l.lowercased().hasPrefix("summary:") {
-                summary = String(l.dropFirst(8)).trimmingCharacters(in: CharacterSet(charactersIn: " *_\"“”"))
-            }
+            // The model sometimes bolds the labels ("**Title:**", "**Title**:") or adds a "#".
+            let l = line.replacingOccurrences(of: "*", with: "").replacingOccurrences(of: "_", with: " ")
+                .trimmingCharacters(in: CharacterSet(charactersIn: " #-"))
+            let lower = l.lowercased()
+            if lower.hasPrefix("title:") { title = String(l.dropFirst(6)).trimmingCharacters(in: junk) }
+            else if lower.hasPrefix("summary:") { summary = String(l.dropFirst(8)).trimmingCharacters(in: CharacterSet(charactersIn: " \"“”")) }
         }
+        if title.isEmpty { UtterLog.write("meeting title: no Title line in the model's \(text.count)-character answer") }
         return title.isEmpty ? nil : (title, summary)
     }
 }
