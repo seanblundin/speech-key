@@ -138,7 +138,12 @@ actor VADCache {
     func manager() async throws -> VadManager {
         if let cached { return cached }
         if let loading { return try await loading.value }
-        let task = Task { try await VadManager() }
+        let task = Task { () throws -> VadManager in
+            let vad = try await VadManager()
+            // The voice detector only decides where pauses are, so it's checked right after loading.
+            try ModelIntegrity.verify(AsrModels.defaultCacheDirectory().deletingLastPathComponent().appendingPathComponent("silero-vad"))
+            return vad
+        }
         loading = task
         do {
             let m = try await task.value

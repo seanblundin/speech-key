@@ -33,7 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let i = args.firstIndex(of: name), i + 1 < args.count else { return nil }
             return args[i + 1]
         }
-        let testing = args.contains { $0.hasPrefix("--simulate") || $0 == "--render-pill" || $0 == "--test-meeting" || $0 == "--test-paste" || $0 == "--test-titles" || $0 == "--test-update-check" || $0 == "--give-codes" }
+        let testing = args.contains { $0.hasPrefix("--simulate") || $0 == "--render-pill" || $0 == "--test-meeting" || $0 == "--test-paste" || $0 == "--test-titles" || $0 == "--test-update-check" || $0 == "--give-codes" || $0 == "--verify-models" }
         if testing { controller.log.enabled = false }
         fnMonitor = FnKeyMonitor()
         setup = SetupWindowController()
@@ -81,14 +81,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Remote control, so Claude can take a snapshot or end a meeting on Sean's behalf:
         //   com.seanblundin.utter.meeting.snapshot / .end
         // There is no remote "start": any app can post these, and starting turns on the mic.
-        // Not in the App Store build, which is for everyone.
+        // Off unless turned on (`defaults write com.seanblundin.utter remoteMeetingControl -bool true`,
+        // as on Sean's Mac), so other apps can't end or snapshot anyone else's meetings (2026-10-25).
+        // Never in the App Store build.
         #if !APPSTORE
+        if UserDefaults.standard.bool(forKey: "remoteMeetingControl") {
         let center = DistributedNotificationCenter.default()
         for (name, action) in [("snapshot", { [weak self] in self?.meeting.snapshot() }),
                                ("end", { [weak self] in self?.meeting.end() })] as [(String, () -> Void)] {
             center.addObserver(forName: Notification.Name("com.seanblundin.utter.meeting.\(name)"), object: nil, queue: .main) { _ in
                 MainActor.assumeIsolated { action() }
             }
+        }
         }
         #endif
         UtterLog.write("launch, keys \(Permissions.keys), paste \(Permissions.paste), mic \(Permissions.mic)")
@@ -112,6 +116,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #if !APPSTORE
         if CommandLine.arguments.contains("--test-update-check") { AppUpdates.probe(); return }
         #endif
+        if let folder = arg("--verify-models") {
+            // SpeechKey --verify-models <model folder>: the integrity check alone, for tests.
+            let t0 = Date()
+            do { try ModelIntegrity.verify(URL(fileURLWithPath: folder)); print(String(format: "ok, %.2fs", Date().timeIntervalSince(t0))) }
+            catch { print("refused: \(error.localizedDescription)") }
+            NSApp.terminate(nil)
+            return
+        }
         if let root = arg("--give-codes") {
             // SpeechKey --give-codes <folder>: the one-time renaming, on a folder you name (a copy).
             for (old, new) in MeetingLibrary.giveCodesToOlderMeetings(in: URL(fileURLWithPath: root)).sorted(by: { $0.key < $1.key }) {

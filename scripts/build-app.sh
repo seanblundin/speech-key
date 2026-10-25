@@ -25,9 +25,17 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BUILD/release/SpeechKey" "$APP/Contents/MacOS/SpeechKey"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+# A local test of the App Store build (no provisioning profile) gets its own identity, so its
+# sandbox, settings and permission answers never mix with the real app's (they did once, 2026-10-25).
+BUNDLE_ID=com.seanblundin.utter
+if [[ -n "$SPEECHKEY_APPSTORE" && -z "$APPSTORE_PROFILE" ]]; then
+  BUNDLE_ID=com.seanblundin.utter.storetest
+  /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" -c "Set :CFBundleName Speech Key Store Test" \
+    -c "Set :CFBundleDisplayName Speech Key Store Test" "$APP/Contents/Info.plist"
+fi
 if [[ -n "$SPEECHKEY_APPSTORE" ]]; then
   # The Store updates the app itself, files it under Productivity, and needs no export paperwork.
-  for k in SUFeedURL SUPublicEDKey SUEnableAutomaticChecks; do /usr/libexec/PlistBuddy -c "Delete :$k" "$APP/Contents/Info.plist"; done
+  for k in SUFeedURL SUPublicEDKey SUEnableAutomaticChecks SURequireSignedFeed SUVerifyUpdateBeforeExtraction; do /usr/libexec/PlistBuddy -c "Delete :$k" "$APP/Contents/Info.plist"; done
   /usr/libexec/PlistBuddy -c "Add :LSApplicationCategoryType string public.app-category.productivity" \
     -c "Add :ITSAppUsesNonExemptEncryption bool false" "$APP/Contents/Info.plist"
 fi
@@ -87,7 +95,7 @@ if [[ "$IDENTITY" != Developer\ ID* && -d "$APP/Contents/Frameworks/Sparkle.fram
   cp "$ENTITLEMENTS_BASE" "$ENTITLEMENTS"
   /usr/libexec/PlistBuddy -c "Add :com.apple.security.cs.disable-library-validation bool true" "$ENTITLEMENTS"
 fi
-codesign "${NESTED_FLAGS[@]}" --entitlements "$ENTITLEMENTS" --identifier com.seanblundin.utter --sign "$IDENTITY" "$APP"
+codesign "${NESTED_FLAGS[@]}" --entitlements "$ENTITLEMENTS" --identifier "$BUNDLE_ID" --sign "$IDENTITY" "$APP"
 if [[ "$IDENTITY" == "-" ]]; then
   echo "Ad-hoc signed (no \"${UTTER_IDENTITY:-Local Dictation Dev}\" certificate yet). Accessibility will need re-granting after each rebuild."
 else

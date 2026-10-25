@@ -62,13 +62,22 @@ public actor SpeechEngine {
 
     /// Loads (downloading on first use) the Parakeet model and, if `boostNames`, the small CTC
     /// model that checks transcripts against vocabulary terms.
+    /// Every model file is checked against `ModelManifest` before it's loaded.
     public init(model: EngineModel = .ultra, boostNames: Bool = true) async throws {
         self.model = model
-        let models = try await AsrModels.downloadAndLoad(version: model.fluid)
+        let folder = try await AsrModels.download(version: model.fluid)
+        try ModelIntegrity.verify(folder)
+        let models = try await AsrModels.load(from: folder, version: model.fluid)
         let manager = AsrManager(config: .default)
         try await manager.loadModels(models)
         self.asr = manager
-        self.ctcModels = boostNames ? try await CtcModels.downloadAndLoad() : nil
+        if boostNames {
+            let ctcFolder = try await CtcModels.download()
+            try ModelIntegrity.verify(ctcFolder)
+            self.ctcModels = try await CtcModels.load(from: ctcFolder)
+        } else {
+            self.ctcModels = nil
+        }
     }
 
     /// Transcribe one chunk. `hints` are names to favor (spellings only, no aliases).

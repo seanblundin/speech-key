@@ -91,6 +91,10 @@ for chunk in try await chunker.append(samples16kMono) where chunk.hasSpeech {
 - [FluidAudio](https://github.com/FluidInference/FluidAudio) (Apache-2.0) runs them on the Neural Engine.
 - [Silero VAD](https://github.com/snakers4/silero-vad) (MIT) finds the pauses.
 
+## Security
+
+See [SECURITY.md](SECURITY.md): how Speech Key keeps your voice and keystrokes on your Mac, how models and updates are verified, and how to report a problem privately.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

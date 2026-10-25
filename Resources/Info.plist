@@ -34,5 +34,9 @@
 	<string>https://speechkeyapp.com/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>Xd/gI/yIvxlveeF3Ate+l3ZdJN5zyJO25witaRs3UtI=</string>
+	<key>SURequireSignedFeed</key>
+	<true/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
 </dict>
 </plist>
