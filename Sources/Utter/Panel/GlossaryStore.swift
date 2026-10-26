@@ -70,15 +70,15 @@ final class GlossaryStore: ObservableObject {
         let before = try read()
         let current = Glossary(markdown: before)
         guard !heard.allSatisfy({ current.apply($0) == correct }) else {
-            return "Already in your glossary: \(heard.joined(separator: ", ")) → \(correct)"
+            return "I already fix that one"
         }
         var doc = GlossaryDocument(markdown: before)
         doc.add(heard: heard, write: correct)
-        let label = "Added \(heard.joined(separator: ", ")) → \(correct)"
-        try write(doc, before: before, label: label)
+        let fix = "\(heard.joined(separator: ", ")) → \(correct)"
+        try write(doc, before: before, label: "Added \(fix)")
         onChange?(AppEvent(time: Date(), kind: .glossaryAdded, heard: heard.joined(separator: ", "), write: correct,
                            source: source.rawValue))
-        return label
+        return "Got it: \(fix) from now on"
     }
 
     /// Takes out fixes matching any of `words` (a heard form, or what a row writes).
@@ -88,13 +88,14 @@ final class GlossaryStore: ObservableObject {
         var doc = GlossaryDocument(markdown: before)
         let removed = doc.remove(words)
         guard !removed.isEmpty else { return nil }
-        let label = "Removed " + removed.map { "\($0.heard) → \($0.write)" }.joined(separator: "; ")
+        let fixes = removed.map { "\($0.heard) → \($0.write)" }.joined(separator: "; ")
+        let label = "Removed " + fixes
         try write(doc, before: before, label: label)
         for r in removed {
             onChange?(AppEvent(time: Date(), kind: .glossaryRemoved, heard: r.heard, write: r.write, notes: r.notes,
                                source: source.rawValue))
         }
-        return label
+        return "Okay, no more \(fixes)"
     }
 
     /// Takes back the last change, if the file hasn't been edited since ("undo that").
@@ -105,7 +106,10 @@ final class GlossaryStore: ObservableObject {
         try last.before.write(toFile: path, atomically: UtterPaths.glossaryWritesAtomically, encoding: .utf8)
         undoLabel = undoStack.last?.label
         refresh()
-        return "Undid: \(last.label)"
+        // The undo stack keeps plain labels ("Added X → Y"); say it the friendly way.
+        if last.label.hasPrefix("Added ") { return "Undone: " + last.label.dropFirst(6) }
+        if last.label.hasPrefix("Removed ") { return "Undone: " + last.label.dropFirst(8) + " is back" }
+        return "Undone: " + last.label
     }
 
     /// Undoes one glossary change from History, by doing its opposite on today's file.

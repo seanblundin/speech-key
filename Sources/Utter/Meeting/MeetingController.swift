@@ -46,7 +46,7 @@ final class MeetingController {
     func start() {
         guard session == nil, !busy else { return }
         guard Permissions.mic == .granted else {
-            pill.show(.message("Meeting mode needs microphone access"), autoHideAfter: 2.5)
+            pill.show(.message("I need the mic to record meetings"), autoHideAfter: 2.5)
             if Permissions.mic == .notAsked { Permissions.requestMic { _ in } } else { Permissions.openMicrophoneSettings() }
             return
         }
@@ -58,11 +58,12 @@ final class MeetingController {
         Task {
             do {
                 try await s.start()
-                pill.show(.message("Meeting started · ⌃ fn saves a snapshot"), autoHideAfter: 2.5)
+                // Doubles as the reminder that everyone should know they're being recorded.
+                pill.show(.message("Recording · let everyone know"), autoHideAfter: 2.5)
             } catch {
                 // The mic works but call audio doesn't: keep going with the mic alone.
                 if Permissions.mic == .granted, error is SystemAudioTap.TapError {
-                    pill.show(.message("Meeting started, mic only (no call audio)"), autoHideAfter: 3.5)
+                    pill.show(.message("Recording you only. I can't hear the call"), autoHideAfter: 3.5)
                 } else {
                     s.stopCapture()
                     session = nil
@@ -78,15 +79,15 @@ final class MeetingController {
 
     func snapshot() {
         guard let s = session, !busy else {
-            if session == nil { pill.show(.message("No meeting running · ⌃⌥ fn starts one"), autoHideAfter: 2) }
+            if session == nil { pill.show(.message("No meeting on · ⌃⌥ 🌐 starts one"), autoHideAfter: 2) }
             return
         }
         busy = true
-        pill.show(.message("Saving snapshot…"))
+        pill.show(.message("Saving…"))
         Task {
             let part = await s.snapshot()
             copyPath(part.file)
-            pill.show(.done("Part \(part.number) saved at \(MeetingTranscript.clock(part.end)) · path copied"), autoHideAfter: 2.2)
+            pill.show(.done("Snapshot \(part.number) saved · path copied"), autoHideAfter: 2.2)
             snapshotsTaken += 1
             let n = snapshotsTaken
             MeetingMeta.update(s.folder) { $0.snapshots = n }
@@ -100,7 +101,7 @@ final class MeetingController {
         guard let s = session, !busy else { return }
         busy = true
         ticker?.invalidate()
-        pill.show(.message("Saving meeting…"))
+        pill.show(.message("Wrapping up…"))
         Task {
             let result = await s.finish()
             session = nil
@@ -109,9 +110,9 @@ final class MeetingController {
             MeetingMeta.update(s.folder) { $0.snapshots = n }
             onEvent?(AppEvent(time: Date(), kind: .meetingEnded, folder: s.folder.path, seconds: result.length, snapshots: n))
             titler?.title(s.folder, force: true)
-            let summary = (["Meeting saved"] + (n > 0 ? ["\(n) snapshots"] : []) + [MeetingTranscript.clock(result.length)])
+            let summary = (["That's a wrap"] + (n > 0 ? ["\(n) snapshots"] : []) + [MeetingTranscript.clock(result.length)])
                 .joined(separator: " · ")
-            pill.show(.done(reason.map { "\($0). \(summary)" } ?? summary), autoHideAfter: 3)
+            pill.show(.done(reason ?? summary), autoHideAfter: 3)
             copyPath(s.folder.appendingPathComponent(MeetingNames.full(s.folder.lastPathComponent)))
             onChange?()
         }
@@ -135,10 +136,10 @@ final class MeetingController {
         onChange?()
         if !warnedAboutCallAudio, s.elapsed > 90, !s.heardCallAudio {
             warnedAboutCallAudio = true
-            pill.show(.message("No call audio yet: check Speech Key’s System Audio permission"), autoHideAfter: 5)
+            pill.show(.message("I still can't hear the call. Check System Audio access"), autoHideAfter: 5)
         }
         if Date().timeIntervalSince(s.lastSpeechAt) > Self.silenceLimit, !busy {
-            end(reason: "Stopped after 10 min of silence")
+            end(reason: "It went quiet, so I saved and stopped")
         }
     }
 

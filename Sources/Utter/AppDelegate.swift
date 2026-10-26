@@ -39,7 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setup = SetupWindowController()
         setup.engineState = { [weak self] in self?.controller.engineState ?? .loading }
         setup.onAllDone = { [weak self] in
-            self?.controller.pill.show(.message("Ready. Hold fn and talk"), autoHideAfter: 2.5)
+            self?.controller.pill.show(.message("Ready · hold 🌐 and talk"), autoHideAfter: 2.5)
         }
         controller.onChange = { [weak self] in self?.refreshIcon() }
         meeting = MeetingController(pill: controller.pill,
@@ -55,7 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !testing && alone {
             let recovered = MeetingRecovery.recoverAll(in: MeetingController.root)
             if let r = recovered.first, r.lines > 0 {
-                controller.pill.show(.done("Recovered your last meeting as part \(r.partNumber)"), autoHideAfter: 4)
+                controller.pill.show(.done("I closed mid-meeting, but it's all saved"), autoHideAfter: 4)
             }
             EventLog.remap(folders: MeetingLibrary.giveCodesToOlderMeetings(in: MeetingController.root))
         }

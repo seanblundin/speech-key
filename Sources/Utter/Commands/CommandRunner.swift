@@ -37,7 +37,7 @@ final class CommandRunner {
             let parsed: ParsedCommand
             do { parsed = try await brain.interpret(input) } catch {
                 UtterLog.write("command failed: \(error)")
-                finish(text: text, raw: raw, reply: "Couldn’t work that out. Try again?", ok: false)
+                finish(text: text, raw: raw, reply: "Lost my train of thought. Try again?", ok: false)
                 return
             }
             UtterLog.write(String(format: "command %.1fs: \"%@\" → %@ %@ %@", Date().timeIntervalSince(started), input,
@@ -52,16 +52,16 @@ final class CommandRunner {
         case .addToGlossary:
             switch CommandWords.tidy(correct: c.correct, wrong: c.wrong, spelled: spelled, said: text) {
             case .missing:
-                return ("Say what Speech Key writes instead, like “Jammy should be Jimmy”", false, false)
+                return ("Which word do I get wrong? Try “Jammy should be Jimmy”", false, false)
             case .sameWord(let w):
-                return ("Both words came out as “\(w)”. Try again and spell the right one letter by letter", false, false)
+                return ("I heard “\(w)” twice. Spell the right one?", false, false)
             case .ok(let correct, let wrong):
                 // Only fix words Utter really wrote. The model sometimes turns a question into a
                 // "fix" (2026-10-20: "yes, pill, UI → self-aware"), and adds made-up variants.
                 let seen = wrong.filter(RecentText.contains)
                 guard !seen.isEmpty else {
                     let w = wrong.first ?? ""
-                    return ("I haven't written “\(w)” lately, so I left your glossary alone", false, false)
+                    return ("I haven't written “\(w)” lately, so I didn't change anything", false, false)
                 }
                 do { return (try glossary.add(heard: seen, correct: correct, source: .voice), true, false) }
                 catch { return (error.localizedDescription, false, false) }
@@ -70,30 +70,30 @@ final class CommandRunner {
             let words = ([c.correct] + c.wrong).map { $0.replacingOccurrences(of: " [spelled]", with: "") }
             do {
                 if let label = try glossary.remove(words) { return (label, true, false) }
-                return ("No glossary fix matches “\(words.filter { !$0.isEmpty }.joined(separator: ", "))”", false, false)
+                return ("I'm not changing “\(words.filter { !$0.isEmpty }.joined(separator: ", "))” anywhere", false, false)
             } catch { return (error.localizedDescription, false, false) }
         case .undo:
             do {
                 if let label = try glossary.undo() { return (label, true, false) }
-                return ("Nothing to undo", false, false)
+                return ("Nothing to take back", false, false)
             } catch { return (error.localizedDescription, false, false) }
         case .startMeeting:
-            if meeting.isRunning { return ("A meeting is already running", false, false) }
+            if meeting.isRunning { return ("Already recording", false, false) }
             meeting.start()
             return ("Started a meeting", true, true)
         case .endMeeting:
-            if !meeting.isRunning { return ("No meeting is running", false, false) }
+            if !meeting.isRunning { return ("No meeting on", false, false) }
             meeting.end()
             return ("Ended the meeting", true, true)
         case .snapshot:
-            if !meeting.isRunning { return ("No meeting is running", false, false) }
+            if !meeting.isRunning { return ("No meeting on", false, false) }
             meeting.snapshot()
             return ("Saved a snapshot", true, true)
         case .reply:
             let text = Self.short(c.reply)
             return (text.isEmpty ? "I can fix words, run meetings, and undo" : text, true, false)
         case .unclear:
-            return ("I can fix words, run meetings, and undo", false, false)
+            return ("I can't do that yet. Try “Jammy should be Jimmy”", false, false)
         }
     }
 

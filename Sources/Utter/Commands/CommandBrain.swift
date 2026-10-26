@@ -95,7 +95,7 @@ final class OnDeviceBrain: CommandBrain {
     var unavailableReason: String? {
         switch SystemLanguageModel.default.availability {
         case .available: return nil
-        case .unavailable(.appleIntelligenceNotEnabled): return "Turn on Apple Intelligence in System Settings to talk to the agent"
+        case .unavailable(.appleIntelligenceNotEnabled): return "Turn on Apple Intelligence so I can understand you"
         case .unavailable(.modelNotReady): return "Apple Intelligence is still downloading its model"
         case .unavailable(.deviceNotEligible): return "This Mac can’t run Apple Intelligence"
         case .unavailable: return "Apple Intelligence isn’t available"

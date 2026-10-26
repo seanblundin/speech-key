@@ -149,7 +149,7 @@ final class DictationController: FnKeyMonitorDelegate {
     private func begin(_ kind: FnChordMachine.Recording, handsFree: Bool = false) {
         guard session == nil else { return }
         guard Permissions.mic == .granted else {
-            pill.show(.message("Speech Key needs microphone access"), autoHideAfter: 2.5)
+            pill.show(.message("I need the mic to hear you"), autoHideAfter: 2.5)
             if Permissions.mic == .notAsked { Permissions.requestMic { _ in } } else { Permissions.openMicrophoneSettings() }
             return
         }
@@ -176,7 +176,7 @@ final class DictationController: FnKeyMonitorDelegate {
             guard self.session === s else { return }
             self.session = nil
             continuation.finish()
-            self.pill.show(.message("Couldn't start the microphone"), autoHideAfter: 2.5)
+            self.pill.show(.message("The mic won't start. Is another app using it?"), autoHideAfter: 3)
         })
 
         if handsFree {
@@ -230,7 +230,7 @@ final class DictationController: FnKeyMonitorDelegate {
         // Hands-free keeps its own pill while it finishes (dot greyed, timer stopped), so ending it
         // doesn't look like a new recording starting.
         let busy: PillModel.Mode = s.handsFree ? .finishing(Date().timeIntervalSince(pill.model.startedAt)) : .working
-        pill.show(engine == nil ? .message("Warming up the speech model…") : busy)
+        pill.show(engine == nil ? .message("One sec, still waking up…") : busy)
         let started = Date()
 
         Task { [weak self] in
@@ -256,7 +256,7 @@ final class DictationController: FnKeyMonitorDelegate {
     private func deliver(raw: String, session s: Session, audioSeconds: Double, waitSeconds: Double) async {
         working = false
         if case .failed(let reason) = engineState {
-            pill.show(.message("Speech model failed to load: \(reason)"), autoHideAfter: 4)
+            pill.show(.message("My speech model didn't load: \(reason)"), autoHideAfter: 4)
             return
         }
         if s.kind == .command {
@@ -325,7 +325,7 @@ final class DictationController: FnKeyMonitorDelegate {
             return
         } else {
             paster.copy(final)
-            pill.show(.message("Copied. Allow pasting in Settings › Privacy › Accessibility"), autoHideAfter: 3.5)
+            pill.show(.message("Copied. I need Accessibility to paste for you"), autoHideAfter: 3.5)
             record(.init(time: Date(), app: s.app, raw: raw, final: final, changes: changes.map(\.description),
                          audioSeconds: audioSeconds, waitSeconds: waitSeconds, delivery: "copy"))
             return
@@ -350,7 +350,7 @@ final class DictationController: FnKeyMonitorDelegate {
     /// An empty transcript: say so only if there was speech to catch.
     private func nothingHeard(_ s: Session) {
         if s.heardSpeech || s.app == "simulation" {
-            pill.show(.message("Didn't catch that"), autoHideAfter: 1.6)
+            pill.show(.message(PillWords.nothingHeard), autoHideAfter: 1.6)
         } else {
             pill.hide()
         }
@@ -369,7 +369,7 @@ final class DictationController: FnKeyMonitorDelegate {
         UtterLog.write(showMessage ? "recording cancelled (Esc)" : "recording dropped (a tap or another chord)")
         s.feed?.finish()
         s.parts.forEach { $0.cancel() }
-        if showMessage { pill.show(.message("Cancelled"), autoHideAfter: 0.9) } else { pill.hide() }
+        if showMessage { pill.show(.message(PillWords.cancelled), autoHideAfter: 1.1) } else { pill.hide() }
     }
 
     // MARK: - Testing

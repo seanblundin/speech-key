@@ -42,7 +42,7 @@ enum PanelRenderer {
                       fixes: ["Pree a → Priya", "Neve → Niamh", "cube cuddle → kubectl"]),
             event(-75, AppEvent(time: now.addingTimeInterval(-75), kind: .glossaryAdded, heard: "Neve", write: "Niamh", source: "voice")),
             History.Item(time: now.addingTimeInterval(-80), kind: .command, app: "Messages", text: "Neve should be Niamh.",
-                         fixes: [], reply: "Added Neve → Niamh", delivery: nil),
+                         fixes: [], reply: "Got it: Neve → Niamh from now on", delivery: nil),
             event(-1500, AppEvent(time: now.addingTimeInterval(-1500), kind: .snapshot, folder: m1,
                                   file: NSHomeDirectory() + "/Documents/Speech Key Meetings/2026-11-04_1400_x7bm3z/part-01_00m00-14m10_2026-11-04_1400_x7bm3z.md",
                                   part: 1, seconds: 850)),

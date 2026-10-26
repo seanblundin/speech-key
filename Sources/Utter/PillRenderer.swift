@@ -9,9 +9,9 @@ enum PillRenderer {
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         let modes: [(String, PillModel.Mode)] = [
             ("1-listening", .listening), ("2-handsfree", .handsFree), ("2b-handsfree-finishing", .finishing(42)), ("3-working", .working),
-            ("4-done-fixed", .done("Fixed NOVA, Tighe")), ("5-done", .done("Pasted")), ("6-message", .message("Didn't catch that")),
+            ("4-done-fixed", .done("Fixed NOVA, Tighe")), ("5-done", .done("Pasted")), ("6-message", .message("I missed that one")),
             ("9-utter-listening", .listening), ("9-utter-handsfree", .handsFree), ("9-utter-thinking", .working),
-            ("9-utter-done", .done("Added Neve → Niamh")),
+            ("9-utter-done", .done("Got it: Neve → Niamh from now on")),
         ]
         let voice: [CGFloat] = [0.05, 0.12, 0.30, 0.55, 0.72, 0.95, 0.70, 0.50, 0.33, 0.15, 0.06]
         for (name, mode) in modes {

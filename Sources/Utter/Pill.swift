@@ -198,6 +198,19 @@ struct ElapsedLabel: View {
     }
 }
 
+/// Pill wording (Sean, 2026-10-26: the friendlier proposal, with five changes). Speech Key talks as
+/// "I"; the two everyday misses rotate so they don't get stale; anything to act on stays plain.
+enum PillWords {
+    private static var turn = 0
+    /// The next of `lines`, so the same miss doesn't read the same way every time.
+    static func rotating(_ lines: [String]) -> String {
+        turn += 1
+        return lines[turn % lines.count]
+    }
+    static var nothingHeard: String { rotating(["I missed that one", "Didn't catch that…", "Say that again?"]) }
+    static var cancelled: String { rotating(["Never mind", "Scrapped, nothing pasted"]) }
+}
+
 /// A borderless, click-through panel that never takes focus, so pasting goes to the app Sean was in.
 @MainActor
 final class PillController {
