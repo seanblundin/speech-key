@@ -4,14 +4,15 @@ openssl command line only.
 
 Needs an App Store Connect API key (Users and Access > Integrations > Team Keys, role Admin): the
 .p8 file in ~/.appstoreconnect/private_keys/AuthKey_<KEY_ID>.p8, and ASC_KEY_ID and ASC_ISSUER_ID
-in the environment or in ~/.config/speech-key/asc.env (KEY=value lines; neither ID is secret).
+in the environment or in ~/.appstoreconnect/asc.env (KEY=value lines; neither ID is secret). The same
+key serves Sean's other apps (Sean OS).
 
   scripts/asc.py setup    register the bundle ID, create the two Mac App Store certificates (into
                           the login keychain, usable by codesign and productbuild without a
                           prompt), and download the provisioning profile to dist/appstore/
   scripts/asc.py get PATH print any API resource, e.g. /v1/apps?filter[bundleId]=com.seanblundin.utter
 """
-import base64, json, os, pathlib, secrets, subprocess, sys, tempfile, time, urllib.error, urllib.request
+import base64, json, os, pathlib, re, secrets, subprocess, sys, tempfile, time, urllib.error, urllib.parse, urllib.request
 
 BUNDLE_ID = "com.seanblundin.utter"
 APP_NAME = "Speech Key"
@@ -22,12 +23,12 @@ OUT = ROOT / "dist" / "appstore"
 
 def config():
     env = dict(os.environ)
-    f = pathlib.Path.home() / ".config/speech-key/asc.env"
-    if f.exists():
-        for line in f.read_text().splitlines():
-            if "=" in line and not line.strip().startswith("#"):
-                k, v = line.split("=", 1)
-                env.setdefault(k.strip(), v.strip())
+    for f in [pathlib.Path.home() / ".appstoreconnect/asc.env", pathlib.Path.home() / ".config/speech-key/asc.env"]:
+        if f.exists():
+            for line in f.read_text().splitlines():
+                if "=" in line and not line.strip().startswith("#"):
+                    k, v = line.split("=", 1)
+                    env.setdefault(k.strip(), v.strip().strip('"'))
     key_id, issuer = env.get("ASC_KEY_ID"), env.get("ASC_ISSUER_ID")
     if not key_id or not issuer:
         sys.exit("Set ASC_KEY_ID and ASC_ISSUER_ID (see the top of this script).")
@@ -89,16 +90,31 @@ def bundle_id():
     return made["data"]["id"]
 
 
-def certificate(kind, label):
-    """A certificate of `kind` whose private key is in the login keychain. Reuses one if codesign
-    can already find it; otherwise makes a key and CSR here and asks Apple to sign it."""
-    names = subprocess.run(["security", "find-identity", "-v"], capture_output=True, text=True).stdout
-    prefixes = {"MAC_APP_DISTRIBUTION": ["3rd Party Mac Developer Application:", "Apple Distribution:"],
-                "MAC_INSTALLER_DISTRIBUTION": ["3rd Party Mac Developer Installer:", "Mac Installer Distribution:"]}[kind]
-    existing = api("GET", f"/v1/certificates?filter[certificateType]={kind}&limit=20")["data"]
-    if existing and any(p in names for p in prefixes):
-        print(f"{label}: already in the keychain")
-        return existing[0]["id"]
+def keychain_serials():
+    """Serial numbers of the signing identities (certificate and private key) in the keychain."""
+    found = set()
+    ids = subprocess.run(["security", "find-identity", "-v"], capture_output=True, text=True).stdout
+    for name in set(re.findall(r'"([^"]+)"', ids)):
+        pems = subprocess.run(["security", "find-certificate", "-a", "-c", name, "-p"], capture_output=True, text=True).stdout
+        for pem in pems.split("-----END CERTIFICATE-----"):
+            if "BEGIN CERTIFICATE" not in pem:
+                continue
+            out = subprocess.run(["openssl", "x509", "-noout", "-serial"], input=pem + "-----END CERTIFICATE-----\n",
+                                 capture_output=True, text=True).stdout
+            found.add(out.strip().split("=")[-1].upper().lstrip("0"))
+    return found
+
+
+def certificate(kinds, label):
+    """A certificate of one of `kinds` whose private key is in the login keychain (matched by
+    serial number), or a new one of the first kind: a key and CSR made here, signed by Apple."""
+    have = keychain_serials()
+    for kind in kinds:
+        for c in api("GET", f"/v1/certificates?filter[certificateType]={kind}&limit=50")["data"]:
+            if c["attributes"]["serialNumber"].upper().lstrip("0") in have:
+                print(f"{label}: using {c['attributes']['name']} ({c['attributes']['displayName']}), already in the keychain")
+                return c["id"]
+    kind = kinds[0]
     with tempfile.TemporaryDirectory() as tmp:
         t = pathlib.Path(tmp)
         subprocess.run(["openssl", "req", "-new", "-newkey", "rsa:2048", "-nodes", "-keyout", t / "key.pem",
@@ -133,12 +149,12 @@ def profile(bundle, cert):
 
 
 if __name__ == "__main__":
-    import urllib.parse
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     if cmd == "setup":
         b = bundle_id()
-        app_cert = certificate("MAC_APP_DISTRIBUTION", "Mac App Distribution")
-        certificate("MAC_INSTALLER_DISTRIBUTION", "Mac Installer Distribution")
+        # Apple Distribution (shared with Sean OS) signs the app; the installer certificate signs the .pkg.
+        app_cert = certificate(["DISTRIBUTION", "MAC_APP_DISTRIBUTION"], "App signing")
+        certificate(["MAC_INSTALLER_DISTRIBUTION"], "Installer signing")
         profile(b, app_cert)
     elif cmd == "get" and len(sys.argv) > 2:
         print(json.dumps(api("GET", sys.argv[2]), indent=2))

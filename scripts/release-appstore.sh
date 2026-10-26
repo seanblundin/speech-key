@@ -26,7 +26,7 @@ productbuild --component "$APP" /Applications --sign "$PKG_ID" "$PKG"
 echo "Packaged: $PKG"
 [[ "$1" == "--no-upload" ]] && exit 0
 
-source ~/.config/speech-key/asc.env 2>/dev/null || true
+source ~/.appstoreconnect/asc.env 2>/dev/null || source ~/.config/speech-key/asc.env 2>/dev/null || true
 : ${ASC_KEY_ID:?set ASC_KEY_ID} ${ASC_ISSUER_ID:?set ASC_ISSUER_ID}
 xcrun altool --validate-app -f "$PKG" -t macos --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
 perl -e 'alarm 1800; exec @ARGV' xcrun altool --upload-app -f "$PKG" -t macos --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
