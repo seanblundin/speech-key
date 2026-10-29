@@ -23,6 +23,10 @@ final class MeetingSession {
     private var statsTimer: Timer?
     var elapsed: TimeInterval { Date().timeIntervalSince(startedAt) }
     var heardCallAudio: Bool { tap.heardAnything }
+    /// Characters transcribed so far from one stream ("Me" or "Them").
+    func charactersTranscribed(_ speaker: String) -> Int {
+        streams.first { $0.speaker == speaker }?.stats.characters ?? 0
+    }
 
     /// A live stream: audio in, chunks at pauses, each chunk transcribed in order.
     private final class Stream {

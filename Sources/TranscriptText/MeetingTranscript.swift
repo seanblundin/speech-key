@@ -94,16 +94,23 @@ public struct MeetingTranscript: Sendable {
     /// One paragraph per turn: consecutive lines from the same speaker are joined.
     /// "Me" lines that repeat what "Them" said at the same moment are dropped: on laptop speakers
     /// the mic hears the call too.
+    /// A pause this long, or a paragraph this long, starts a new timestamped paragraph even when the
+    /// speaker stays the same. (2026-10-28: with call audio missing, a whole 39-minute meeting came
+    /// out as one "Me" paragraph.)
+    static let paragraphPause: TimeInterval = 2.5
+    static let paragraphLength: TimeInterval = 60
+
     static func render(_ lines: [Line]) -> String {
         let kept = dropEcho(lines)
         var out: [String] = []
-        var current: (speaker: String, start: TimeInterval, texts: [String])?
+        var current: (speaker: String, start: TimeInterval, end: TimeInterval, texts: [String])?
         for line in kept {
-            if let c = current, c.speaker == line.speaker {
+            if let c = current, c.speaker == line.speaker, line.start - c.end < paragraphPause, line.end - c.start < paragraphLength {
                 current?.texts.append(line.text)
+                current?.end = max(c.end, line.end)
             } else {
                 if let c = current { out.append("**[\(clock(c.start))] \(c.speaker):** \(c.texts.joined(separator: " "))") }
-                current = (line.speaker, line.start, [line.text])
+                current = (line.speaker, line.start, line.end, [line.text])
             }
         }
         if let c = current { out.append("**[\(clock(c.start))] \(c.speaker):** \(c.texts.joined(separator: " "))") }

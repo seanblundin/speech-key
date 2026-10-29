@@ -38,12 +38,24 @@ struct MeetingTranscriptTests {
 
     @Test func linesAreSortedAndTurnsJoined() {
         var t = MeetingTranscript(startedAt: Date())
-        t.add(Line(speaker: "Me", start: 10, end: 12, text: "second"))
+        t.add(Line(speaker: "Me", start: 6, end: 8, text: "second"))
         t.add(Line(speaker: "Me", start: 3, end: 5, text: "first"))
         t.add(Line(speaker: "Them", start: 20, end: 22, text: "reply"))
         let md = t.fullMarkdown(now: 30)
         #expect(md.contains("**[0:03] Me:** first second"))
         #expect(md.contains("**[0:20] Them:** reply"))
+    }
+
+    @Test func pausesAndLongRunsStartNewParagraphs() {
+        var t = MeetingTranscript(startedAt: Date())
+        t.add(Line(speaker: "Me", start: 0, end: 4, text: "one"))
+        t.add(Line(speaker: "Me", start: 10, end: 12, text: "two"))           // 6 s pause
+        for i in 0..<40 { t.add(Line(speaker: "Me", start: 13 + Double(i) * 2, end: 14.5 + Double(i) * 2, text: "w\(i)")) }
+        let md = t.fullMarkdown(now: 100)
+        #expect(md.contains("**[0:00] Me:** one\n"))
+        #expect(md.contains("**[0:10] Me:** two w0"))
+        // The run that started at 0:10 is cut before it passes a minute.
+        #expect(md.contains("**[1:"))
     }
 
     @Test func micEchoOfTheCallIsDropped() {

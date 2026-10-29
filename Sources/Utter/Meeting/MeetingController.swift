@@ -134,9 +134,14 @@ final class MeetingController {
     private func tick() {
         guard let s = session else { ticker?.invalidate(); return }
         onChange?()
-        if !warnedAboutCallAudio, s.elapsed > 90, !s.heardCallAudio {
+        // No call audio at all, or (2026-10-28) a call whose side stayed silent for a whole meeting
+        // while the mic heard everyone through the speakers: one blip of sound had counted as heard.
+        let onlyMic = s.elapsed > 120 && s.charactersTranscribed(MeetingTranscript.me) > 300
+            && s.charactersTranscribed(MeetingTranscript.them) == 0
+        if !warnedAboutCallAudio, (s.elapsed > 90 && !s.heardCallAudio) || onlyMic {
             warnedAboutCallAudio = true
-            pill.show(.message("I still can't hear the call. Check System Audio access"), autoHideAfter: 5)
+            UtterLog.write("warned: no call audio (\(s.heardCallAudio ? "silent" : "nothing arrived"))")
+            pill.show(.message("I can only hear your mic, not the call. Check System Audio access"), autoHideAfter: 8)
         }
         if Date().timeIntervalSince(s.lastSpeechAt) > Self.silenceLimit, !busy {
             end(reason: "It went quiet, so I saved and stopped")
