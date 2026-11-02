@@ -174,7 +174,7 @@ final class MeetingSession {
         let end = elapsed
         for stream in streams {
             // Skip silent tails: the model can invent a word ("nul") out of digital silence.
-            if let tail = stream.chunker?.flush(), tail.hasSpeech, tail.samples.count >= SpeechEngine.minimumSamples {
+            if let tail = await stream.chunker?.flush(), tail.hasSpeech, tail.samples.count >= SpeechEngine.minimumSamples {
                 transcribe(tail, on: stream, priority: .interactive)
             }
         }

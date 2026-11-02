@@ -238,7 +238,7 @@ final class DictationController: FnKeyMonitorDelegate {
             await s.feedTask?.value
             var parts = s.parts
             if let chunker = s.chunker {
-                if let tail = chunker.flush(), tail.samples.count >= SpeechEngine.minimumSamples {
+                if let tail = await chunker.flush(), tail.samples.count >= SpeechEngine.minimumSamples {
                     if tail.hasSpeech { s.vadHeardSpeech = true }
                     parts.append(self.transcribe(tail.samples, for: s))
                 }

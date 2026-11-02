@@ -82,11 +82,11 @@ if let rounds = stressRounds {
                         for chunk in try await chunker.append(piece) where chunk.hasSpeech {
                             pending.append(Task { try await engine.text(samples: chunk.samples, vocabulary: vocab, priority: .background) })
                         }
-                        if Int.random(in: 0..<400) == 0, let tail = chunker.flush(), tail.samples.count >= SpeechEngine.minimumSamples {
+                        if Int.random(in: 0..<400) == 0, let tail = await chunker.flush(), tail.samples.count >= SpeechEngine.minimumSamples {
                             pending.append(Task { try await engine.text(samples: tail.samples, vocabulary: vocab, priority: .interactive) })
                         }
                     }
-                    if let tail = chunker.flush(), tail.samples.count >= SpeechEngine.minimumSamples {
+                    if let tail = await chunker.flush(), tail.samples.count >= SpeechEngine.minimumSamples {
                         pending.append(Task { try await engine.text(samples: tail.samples, vocabulary: vocab, priority: .interactive) })
                     }
                     for p in pending { let t = try await p.value; n += 1; c += t.count }

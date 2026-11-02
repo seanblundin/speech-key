@@ -7,8 +7,11 @@ import FluidAudio
 /// Feed audio with `append` as it arrives; call `flush` when the stream stops or when a
 /// caller needs everything so far (a dictation key release, a meeting Snapshot).
 ///
-/// Not thread-safe: use one chunker per stream, from one task.
-public final class PauseChunker {
+/// An actor, so `append` and `flush` never run at the same time. It was a plain class, and Swift
+/// ran its async `append` on a background thread while a snapshot's `flush` ran on the main
+/// thread; the two corrupted the buffers and crashed the app (2026-11-02). A flush that lands while
+/// `append` waits on the VAD is still handled (see `cutCount`).
+public actor PauseChunker {
     public struct Chunk: Sendable {
         public let samples: [Float]
         /// Seconds from the start of the stream.
