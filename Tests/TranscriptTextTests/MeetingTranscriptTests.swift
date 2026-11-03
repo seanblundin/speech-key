@@ -52,8 +52,8 @@ struct MeetingTranscriptTests {
         t.add(Line(speaker: "Me", start: 10, end: 12, text: "two"))           // 6 s pause
         for i in 0..<40 { t.add(Line(speaker: "Me", start: 13 + Double(i) * 2, end: 14.5 + Double(i) * 2, text: "w\(i)")) }
         let md = t.fullMarkdown(now: 100)
-        #expect(md.contains("**[0:00] Me:** one\n"))
-        #expect(md.contains("**[0:10] Me:** two w0"))
+        #expect(md.contains("**[0:00] Room:** one\n"))
+        #expect(md.contains("**[0:10] Room:** two w0"))
         // The run that started at 0:10 is cut before it passes a minute.
         #expect(md.contains("**[1:"))
     }
@@ -84,5 +84,20 @@ struct MeetingTranscriptTests {
         #expect(!md.contains("**[1:44] Me:**"))
         #expect(!md.contains("that worked. Totally"))
         #expect(md.contains("Totally agree."))
+    }
+
+    @Test func micOnlyMeetingsAreLabeledRoom() {
+        var t = MeetingTranscript(startedAt: Date())
+        t.add(Line(speaker: "Me", start: 1, end: 3, text: "Thanks for coming in."))
+        t.add(Line(speaker: "Me", start: 10, end: 12, text: "Happy to be here."))
+        #expect(t.micOnly)
+        let md = t.fullMarkdown(now: 20)
+        #expect(md.contains("Mic only"))
+        #expect(md.contains("**[0:01] Room:**"))
+        #expect(!md.contains("Me:"))
+        #expect(t.makePart(endingAt: 20).markdown.contains("Room:"))
+        t.add(Line(speaker: "Them", start: 14, end: 15, text: "Hello?"))
+        #expect(!t.micOnly)
+        #expect(t.fullMarkdown(now: 20).contains("**[0:01] Me:**"))
     }
 }

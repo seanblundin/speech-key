@@ -75,7 +75,8 @@ public struct MeetingTranscript: Sendable {
         md += "\(Self.clock(window.start))–\(Self.clock(window.end)) into the call"
         if number > 1 { md += ", starting \(Int(Self.overlap)) s before part \(number - 1) ended" }
         md += ".\n\n"
-        md += Self.render(linesIn(window.start, window.end))
+        if micOnly { md += Self.micOnlyNote }
+        md += Self.render(linesIn(window.start, window.end), micOnly: micOnly)
         return (number, name, md)
     }
 
@@ -83,9 +84,18 @@ public struct MeetingTranscript: Sendable {
     public func fullMarkdown(now: TimeInterval) -> String {
         var md = "# Meeting \(Self.dateTime(startedAt))\(code.map { " · \($0)" } ?? "")\n\n"
         md += "Length \(Self.clock(now)) · \(partEnds.count) part\(partEnds.count == 1 ? "" : "s") saved\n\n"
-        md += Self.render(lines)
+        if micOnly { md += Self.micOnlyNote }
+        md += Self.render(lines, micOnly: micOnly)
         return md
     }
+
+    /// No computer audio at all, only the mic: an in-person meeting, or a phone call on speaker
+    /// (Sean records both, 2026-11-03). Every voice came through the mic, so calling them all "Me"
+    /// would be wrong; they're labeled "Room" instead. Decided from the whole meeting, so every
+    /// part of one meeting uses the same label.
+    public var micOnly: Bool { !lines.isEmpty && !lines.contains { $0.speaker == Self.them } }
+    public static let room = "Room"
+    static let micOnlyNote = "_Mic only: no computer audio, so every voice is from the mic and labeled Room._\n\n"
 
     func linesIn(_ start: TimeInterval, _ end: TimeInterval) -> [Line] {
         lines.filter { $0.end > start && $0.start < end }
@@ -100,8 +110,10 @@ public struct MeetingTranscript: Sendable {
     static let paragraphPause: TimeInterval = 2.5
     static let paragraphLength: TimeInterval = 60
 
-    static func render(_ lines: [Line]) -> String {
-        let kept = dropEcho(lines)
+    static func render(_ lines: [Line], micOnly: Bool = false) -> String {
+        let kept = dropEcho(lines).map { l in
+            micOnly && l.speaker == me ? Line(speaker: room, start: l.start, end: l.end, text: l.text) : l
+        }
         var out: [String] = []
         var current: (speaker: String, start: TimeInterval, end: TimeInterval, texts: [String])?
         for line in kept {

@@ -136,12 +136,14 @@ final class MeetingController {
         onChange?()
         // No call audio at all, or (2026-10-28) a call whose side stayed silent for a whole meeting
         // while the mic heard everyone through the speakers: one blip of sound had counted as heard.
+        // Often that's on purpose: an in-person meeting, or a phone call on speaker (Sean, 2026-11-03).
+        // So the pill says what's happening, calmly, instead of calling it a problem.
         let onlyMic = s.elapsed > 120 && s.charactersTranscribed(MeetingTranscript.me) > 300
             && s.charactersTranscribed(MeetingTranscript.them) == 0
         if !warnedAboutCallAudio, (s.elapsed > 90 && !s.heardCallAudio) || onlyMic {
             warnedAboutCallAudio = true
             UtterLog.write("warned: no call audio (\(s.heardCallAudio ? "silent" : "nothing arrived"))")
-            pill.show(.message("I can only hear your mic, not the call. Check System Audio access"), autoHideAfter: 8)
+            pill.show(.message("I don’t hear any computer audio · recording the room on your mic"), autoHideAfter: 5)
         }
         if Date().timeIntervalSince(s.lastSpeechAt) > Self.silenceLimit, !busy {
             end(reason: "It went quiet, so I saved and stopped")

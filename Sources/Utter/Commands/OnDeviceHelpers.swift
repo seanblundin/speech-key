@@ -107,7 +107,8 @@ final class MeetingTitler {
 @available(macOS 26.0, *)
 enum OnDeviceMeetingTitle {
     static let instructions = """
-    You title meeting transcripts. "Me" is the user; "Them" is everyone else on the call. Be concrete and plain: \
+    You title meeting transcripts. "Me" is the user; "Them" is everyone else on the call. \
+    "Room" means a mic-only recording, such as an in-person meeting: every voice there, the user's included. Be concrete and plain: \
     name the project, company, product or event if one is clear. Never invent facts.
     """
 
