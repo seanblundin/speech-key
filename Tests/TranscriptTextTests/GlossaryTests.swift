@@ -249,4 +249,26 @@ struct CommandWordsTests {
         #expect(WordFacts.isOrdinary(".md"))
         #expect(!WordFacts.isOrdinary("Shivonne"))
     }
+
+    @Test func soundSwapsNeverSwallowEverydayWords() {
+        #expect(!WordFacts.acceptsSwap(original: "Seo is", replacement: "Sean OS"))
+        #expect(!WordFacts.acceptsSwap(original: "SeanOS runs on", replacement: "Sean Blundin"))
+        #expect(WordFacts.acceptsSwap(original: "Tyge", replacement: "Tighe"))
+        #expect(WordFacts.acceptsSwap(original: "Justin Milligen", replacement: "Justin Milligan"))
+        #expect(WordFacts.acceptsSwap(original: "Shawn Blunden", replacement: "Sean Blundin"))
+    }
+
+    @Test func phrasesOfEverydayWordsAreNotBoosted() throws {
+        let g = Glossary(markdown: """
+        | Heard as | Write as | Notes |
+        |---|---|---|
+        | Shawn OS, LifeOS | Sean OS | |
+        | Link Venture | Link Ventures | |
+        | Sean Blunden | Sean Blundin | |
+        """)
+        let boosted = g.boostTerms.map(\.canonical)
+        #expect(!boosted.contains("Sean OS"))
+        #expect(!boosted.contains("Link Ventures"))
+        #expect(boosted.contains("Sean Blundin"))
+    }
 }

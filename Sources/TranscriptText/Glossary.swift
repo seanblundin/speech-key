@@ -70,6 +70,10 @@ public struct Glossary: @unchecked Sendable {
             // Phrase rewrites ("venmoed" → "paid on Venmo") aren't names to listen for.
             guard let first = t.first, first.isUppercase || first.isNumber else { return false }
             if !t.contains(" "), CommonWords.isFirstName(t) { return false }
+            // A phrase made only of everyday or very short words ("Sean OS", "Link Ventures") is
+            // one the recognizer already writes correctly, so listening for it only adds wrong
+            // swaps ("SEO is evolving" became "Sean OS evolving", 2026-11-18).
+            if t.contains(" "), !t.split(separator: " ").contains(where: { WordFacts.isDistinctive(String($0)) }) { return false }
             let capitals = t.unicodeScalars.filter { CharacterSet.uppercaseLetters.contains($0) }.count
             return !term.aliases.isEmpty || capitals >= 2
         }
@@ -446,6 +450,42 @@ public enum WordFacts {
         #else
         return false
         #endif
+    }
+
+    /// A word worth listening for by sound: long enough, and not an everyday word or first name.
+    public static func isDistinctive(_ word: String) -> Bool {
+        word.filter { $0.isLetter || $0.isNumber }.count >= 4 && !isOrdinaryWord(word)
+    }
+
+    /// Whether a sound-based swap may replace `original` with `replacement`. It may fix a
+    /// misspelled name, but never swallow everyday words around it: "Seo is" → "Sean OS" loses
+    /// "is", and "SeanOS runs on" → "Sean Blundin" loses "runs on" (both seen 2026-11-18). An
+    /// everyday word may go only when the replacement has a near-twin of it ("Shawn" → "Sean").
+    public static func acceptsSwap(original: String, replacement: String) -> Bool {
+        let clean: (Substring) -> String = { $0.lowercased().filter { $0.isLetter || $0.isNumber } }
+        let new = replacement.split(whereSeparator: { $0 == " " || $0 == "-" }).map(clean)
+        for word in original.split(whereSeparator: { $0 == " " || $0 == "-" }) where isOrdinaryWord(String(word)) {
+            let w = clean(word)
+            if w.isEmpty || new.contains(w) { continue }
+            let twin = w.count >= 4 && new.contains { $0.first == w.first && editDistance($0, w) <= 2 }
+            if !twin { return false }
+        }
+        return true
+    }
+
+    static func editDistance(_ a: String, _ b: String) -> Int {
+        let a = Array(a), b = Array(b)
+        var row = Array(0...b.count)
+        for i in 0..<a.count {
+            var previous = row[0]
+            row[0] = i + 1
+            for j in 0..<b.count {
+                let current = row[j + 1]
+                row[j + 1] = a[i] == b[j] ? previous : min(previous, row[j], current) + 1
+                previous = current
+            }
+        }
+        return row[b.count]
     }
 
     /// True when every word in the phrase is ordinary.

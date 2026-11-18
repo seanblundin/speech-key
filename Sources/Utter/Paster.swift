@@ -15,7 +15,9 @@ import Carbon.HIToolbox
 @MainActor
 final class Paster: NSObject, NSPasteboardItemDataProvider {
     /// How long the focused app gets to read the text before Speech Key calls the paste missed.
-    static let confirmWithin: TimeInterval = 1.0
+    /// It was 1 s, and a busy app (Claude while it streams a reply) sometimes took longer, so a
+    /// paste that was about to land got called missed (7 times by 2026-11-18, all Claude).
+    static let confirmWithin: TimeInterval = 2.5
 
     enum Result {
         /// The focused app read the text.

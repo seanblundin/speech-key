@@ -86,13 +86,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Never in the App Store build.
         #if !APPSTORE
         if UserDefaults.standard.bool(forKey: "remoteMeetingControl") {
+        // `.deliverImmediately`: AppKit holds these back while the app isn't the active one, which
+        // for a menu bar app is nearly always. Without it the running app never heard them (found
+        // 2026-11-18).
         let center = DistributedNotificationCenter.default()
-        for (name, action) in [("snapshot", { [weak self] in self?.meeting.snapshot() }),
-                               ("end", { [weak self] in self?.meeting.end() })] as [(String, () -> Void)] {
-            center.addObserver(forName: Notification.Name("com.seanblundin.utter.meeting.\(name)"), object: nil, queue: .main) { _ in
-                MainActor.assumeIsolated { action() }
-            }
-        }
+        center.addObserver(self, selector: #selector(remoteSnapshot), name: Notification.Name("com.seanblundin.utter.meeting.snapshot"),
+                           object: nil, suspensionBehavior: .deliverImmediately)
+        center.addObserver(self, selector: #selector(remoteEnd), name: Notification.Name("com.seanblundin.utter.meeting.end"),
+                           object: nil, suspensionBehavior: .deliverImmediately)
         }
         #endif
         UtterLog.write("launch, keys \(Permissions.keys), paste \(Permissions.paste), mic \(Permissions.mic)")
@@ -274,7 +275,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 check(pb.string(forType: .string) == "Speech Key paste test two", "the text stays on the clipboard for ⌘V")
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.3) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8 + Paster.confirmWithin + 0.5) {
             pb.clearContents()
             pb.writeObjects(saved.map { dict in
                 let item = NSPasteboardItem()
@@ -348,6 +349,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - Panel
+
+    @objc private func remoteSnapshot() { meeting.snapshot() }
+    @objc private func remoteEnd() { meeting.end() }
 
     @objc private func statusItemClicked() {
         guard let button = statusItem.button else { return }

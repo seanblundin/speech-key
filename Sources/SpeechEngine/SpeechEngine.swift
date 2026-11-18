@@ -169,7 +169,7 @@ public actor SpeechEngine {
             guard let replacement = r.replacementWord?.trimmingCharacters(in: .whitespaces), !replacement.isEmpty else { continue }
             let original = r.originalWord.trimmingCharacters(in: CharacterSet.punctuationCharacters.union(.whitespaces))
             guard !original.isEmpty, original.lowercased() != replacement.lowercased(),
-                  !WordFacts.isOrdinary(original) else { continue }
+                  !WordFacts.isOrdinary(original), WordFacts.acceptsSwap(original: original, replacement: replacement) else { continue }
             let parts = original.split(whereSeparator: { $0 == " " }).map { NSRegularExpression.escapedPattern(for: String($0)) }
             let pattern = #"(?<![\p{L}\p{N}])"# + parts.joined(separator: #"[\s,]+"#) + #"(?![\p{L}\p{N}])"#
             guard let re = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),

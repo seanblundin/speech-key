@@ -212,17 +212,28 @@ enum PillWords {
 }
 
 /// A borderless, click-through panel that never takes focus, so pasting goes to the app Sean was in.
+///
+/// The window is built fresh each time the pill appears. One window kept for the app's whole life
+/// went stale: after days of running, macOS had it on the desktop Space only (a new one belongs to
+/// every Space), so the pill never appeared over full-screen apps (Sean, 2026-11-18: "the Pill just
+/// sorta doesn't show up a lot of the time"). A fresh window can't carry old state.
 @MainActor
 final class PillController {
     let model = PillModel()
-    private let panel: NSPanel
+    private var panel: NSPanel
     private var hideWork: DispatchWorkItem?
+    /// Counts appearances, so a late on-screen check can tell whether it still applies.
+    private var appearance = 0
     /// Tests watch the pill's states through this (`--simulate-keys`).
     var onModeChange: ((PillModel.Mode) -> Void)?
 
     init() {
-        panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 520, height: 64),
-                        styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+        panel = Self.makePanel(model)
+    }
+
+    private static func makePanel(_ model: PillModel) -> NSPanel {
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 520, height: 64),
+                            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
@@ -234,6 +245,17 @@ final class PillController {
         host.frame = panel.contentView!.bounds
         host.autoresizingMask = [.width, .height]
         panel.contentView = host
+        // Draw the empty state once, so the first real state animates in instead of popping.
+        host.layoutSubtreeIfNeeded()
+        return panel
+    }
+
+    private func replacePanel() {
+        let old = panel
+        panel = Self.makePanel(model)
+        old.orderOut(nil)
+        old.contentView = nil
+        old.close()
     }
 
     func show(_ mode: PillModel.Mode, autoHideAfter delay: TimeInterval? = nil) {
@@ -241,6 +263,11 @@ final class PillController {
         if mode == .listening || mode == .handsFree {
             if model.mode != .listening && model.mode != .handsFree { model.startedAt = Date() }
             if case .working = model.mode {} else if mode == .listening { model.resetLevels() }
+        }
+        if !panel.isVisible {
+            replacePanel()
+            appearance += 1
+            checkOnScreen(appearance)
         }
         position()
         panel.orderFrontRegardless()
@@ -250,6 +277,24 @@ final class PillController {
             let work = DispatchWorkItem { [weak self] in self?.hide() }
             hideWork = work
             DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+        }
+    }
+
+    /// Asks the window server, a moment after the pill appears, whether it is really on screen.
+    /// AppKit's own `isVisible` says yes even for a window stuck on another Space. If it isn't,
+    /// say so in the log and try once more with another new window.
+    private func checkOnScreen(_ which: Int, retry: Bool = true) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            guard let self, self.appearance == which, self.model.mode != .hidden, self.panel.isVisible else { return }
+            let info = CGWindowListCopyWindowInfo([.optionIncludingWindow], CGWindowID(self.panel.windowNumber)) as? [[String: Any]]
+            let onScreen = (info?.first?[kCGWindowIsOnscreen as String] as? Bool) ?? false
+            guard !onScreen else { return }
+            UtterLog.write("pill wasn't on screen (window \(self.panel.windowNumber))\(retry ? "; rebuilt it" : " after a rebuild")")
+            guard retry else { return }
+            self.replacePanel()
+            self.position()
+            self.panel.orderFrontRegardless()
+            self.checkOnScreen(which, retry: false)
         }
     }
 
