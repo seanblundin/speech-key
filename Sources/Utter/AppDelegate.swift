@@ -86,14 +86,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Never in the App Store build.
         #if !APPSTORE
         if UserDefaults.standard.bool(forKey: "remoteMeetingControl") {
-        // `.deliverImmediately`: AppKit holds these back while the app isn't the active one, which
-        // for a menu bar app is nearly always. Without it the running app never heard them (found
-        // 2026-11-18).
+        // `.deliverImmediately`, so they arrive while the app is in the background, which for a
+        // menu bar app is nearly always. Each one is logged, to show whether remote control is on.
         let center = DistributedNotificationCenter.default()
         center.addObserver(self, selector: #selector(remoteSnapshot), name: Notification.Name("com.seanblundin.utter.meeting.snapshot"),
                            object: nil, suspensionBehavior: .deliverImmediately)
         center.addObserver(self, selector: #selector(remoteEnd), name: Notification.Name("com.seanblundin.utter.meeting.end"),
                            object: nil, suspensionBehavior: .deliverImmediately)
+        UtterLog.write("remote meeting control on")
         }
         #endif
         UtterLog.write("launch, keys \(Permissions.keys), paste \(Permissions.paste), mic \(Permissions.mic)")
@@ -350,8 +350,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Panel
 
-    @objc private func remoteSnapshot() { meeting.snapshot() }
-    @objc private func remoteEnd() { meeting.end() }
+    @objc private func remoteSnapshot() { UtterLog.write("remote: snapshot"); meeting.snapshot() }
+    @objc private func remoteEnd() { UtterLog.write("remote: end"); meeting.end() }
 
     @objc private func statusItemClicked() {
         guard let button = statusItem.button else { return }
