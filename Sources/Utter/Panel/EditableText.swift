@@ -10,6 +10,8 @@ struct EditableText: NSViewRepresentable {
     @Binding var text: String
     /// Words Utter fixed on its own, underlined with a tooltip saying what it heard.
     var fixes: [(heard: String, correct: String)] = []
+    /// Words to tint (the raw view marks what the cleanup took out).
+    var highlights: [NSRange] = []
     var isEditing: Bool
     var font: NSFont = .systemFont(ofSize: 13)
     var onClick: () -> Void = {}
@@ -90,6 +92,11 @@ struct EditableText: NSViewRepresentable {
             parent.text = v.string
         }
 
+        /// Orange that still reads on a light background.
+        static let cutTint = NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .systemOrange : NSColor(srgbRed: 0.78, green: 0.36, blue: 0.0, alpha: 1)
+        }
+
         /// Sets the text and marks the words Utter fixed.
         func show(_ text: String, in v: NSTextView) {
             let s = NSMutableAttributedString(string: text, attributes: [.font: parent.font, .foregroundColor: NSColor.labelColor])
@@ -105,6 +112,9 @@ struct EditableText: NSViewRepresentable {
                     let next = r.location + r.length
                     search = NSRange(location: next, length: ns.length - next)
                 }
+            }
+            for r in parent.highlights where r.location + r.length <= ns.length {
+                s.addAttribute(.foregroundColor, value: Self.cutTint, range: r)
             }
             v.textStorage?.setAttributedString(s)
             v.typingAttributes = [.font: parent.font, .foregroundColor: NSColor.labelColor]

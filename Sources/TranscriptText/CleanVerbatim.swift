@@ -4,21 +4,81 @@ import Foundation
 ///
 /// It removes only:
 /// - um, uh and similar sounds,
-/// - immediate stutters of small words ("the the", "I, I think"),
+/// - immediate stutters ("the the", "I, I think", "close close"),
 /// - immediate restarts of a phrase ("the demo, the demo is" → "the demo is"),
-/// - "like" when it is set off by commas as a filler.
+/// - "like" when it is set off by commas as a filler,
+/// - the cut-off start of a word that is then said in full ("w white paper", "s within"),
+/// - marks the recognizer leaves for a sound it has no letter for ("Q<unk>A" → "Q&A").
 ///
 /// It never removes anything across a sentence end, so a repeated sentence
 /// ("I think it's good. I think it's good.") stays, and "you know" or "I mean" stay too.
+/// It never rewrites: every word left is a word Sean said, in the order he said it.
 public enum CleanVerbatim {
+    /// One thing the cleanup took out, for the log: what kind, the words, and where.
+    public struct Edit: Codable, Equatable, Sendable {
+        public enum Kind: String, Codable, Sendable {
+            /// um, uh, and "like" set off by commas.
+            case filler
+            /// A word or phrase said twice in a row.
+            case `repeat`
+            /// The cut-off start of a word.
+            case fragment
+            /// A mark the recognizer left behind.
+            case glitch
+        }
+        public let kind: Kind
+        /// The words taken out.
+        public let cut: String
+        /// A few words around them, as they read before the cut.
+        public let near: String
+    }
+
     static let fillers: Set<String> = ["um", "umm", "ummm", "uh", "uhh", "uhhh", "uhm", "erm", "er", "hmm", "hmmm", "mm", "mmm"]
 
-    /// Small words that are never doubled on purpose. Words like "that", "had", "very" and "no"
-    /// can be (“that that”, “very, very”), so they are left alone.
+    /// Small words that are never doubled on purpose, so they collapse even across a comma ("I, I think").
     static let stutterWords: Set<String> = [
         "the", "a", "an", "and", "i", "to", "of", "in", "it", "it's", "i'm", "we", "you", "but", "or",
         "for", "with", "on", "at", "my", "our", "this", "they", "he", "she", "if", "when", "so", "is", "are",
         "was", "be", "can", "just", "like", "what", "how", "why", "we're", "they're", "you're", "there",
+    ]
+
+    /// Words people do double on purpose ("very very", "no no", "that that", "blah blah"). Left alone.
+    static let doubledOnPurpose: Set<String> = [
+        "that", "had", "very", "really", "no", "yes", "yeah", "yep", "nope", "bye", "super", "way", "much", "many",
+        "long", "far", "big", "more", "never", "ever", "ha", "haha", "blah", "la", "na", "yada", "knock", "tap", "wait",
+        "go", "now", "okay", "ok", "right", "sure", "well", "please", "hey", "hi", "boom", "bang", "wow", "oh", "ooh",
+        "ah", "come", "look", "test", "testing", "check", "not", "do", "quick", "tiny", "little", "pretty", "real",
+        "damn", "new", "old", "good", "bad", "great", "nice", "cool", "sorry", "thank", "thanks", "tick", "click",
+        "beep", "ding", "hip", "same", "stop", "again", "out", "up", "down", "her", "his", "fine", "true", "false",
+        "left", "next", "back", "bla", "so-so", "win", "fast", "slow", "soon", "all", "day", "night", "side", "step",
+        "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "zero", "double", "hundred",
+        "thousand", "million", "billion", "dot", "dash", "slash", "star", "plus", "minus", "equals", "tab", "space",
+    ]
+
+    /// Lone letters that are only ever the cut-off start of a word. Not c, k, n, q, x, y, z, and no
+    /// vowels: those show up as real words or labels ("plan c", "x axis", "rock n roll").
+    static let fragmentLetters: Set<String> = ["b", "d", "f", "g", "h", "j", "l", "m", "p", "r", "s", "t", "v", "w"]
+    /// Word starts that aren't words themselves.
+    static let fragmentStarts: Set<String> = [
+        "th", "sh", "wh", "fr", "tr", "gr", "br", "pl", "sl", "sm", "sn", "sw", "tw", "dr", "cr", "fl", "bl",
+        "kn", "wr", "qu", "st", "str", "thr", "shr", "spr", "scr",
+    ]
+    /// A lone letter after one of these is a label ("plan b", "press s", "column d"), not a fragment.
+    static let labelWords: Set<String> = [
+        "plan", "option", "part", "type", "vitamin", "grade", "series", "class", "section", "appendix", "exhibit",
+        "version", "phase", "team", "group", "level", "tier", "letter", "letters", "column", "row", "key", "press",
+        "hit", "hold", "step", "item", "point", "variable", "command", "cmd", "control", "ctrl", "shift", "alt",
+        "fn", "globe", "drive", "model", "figure", "table", "room", "gate", "terminal", "line", "track", "round",
+        "big", "capital", "lowercase", "uppercase", "small", "and", "or",
+    ]
+    /// A lone letter before one of these is half a compound ("t shirt", "b roll", "p value").
+    static let compoundSeconds: Set<String> = [
+        "shirt", "shirts", "mail", "ray", "roll", "test", "tests", "axis", "value", "values", "dash", "drive",
+        "sharp", "minor", "major", "flat", "mobile", "day", "plus", "minus", "equals", "school", "team", "side",
+        "list", "key", "word", "bomb", "shape", "shaped", "bone", "rex", "pain", "curve", "neck", "pad", "train",
+        "trap", "stop", "class", "force", "forces", "plot", "junction", "string", "line", "block", "wing", "cup",
+        "type", "tier", "plan", "squad", "level", "grade", "movie", "rated", "spot", "zone", "ring", "frame",
+        "series", "band", "cell", "wave", "score", "turn", "bar", "corp", "student", "students", "player", "players",
     ]
 
     struct Token {
@@ -29,15 +89,22 @@ public enum CleanVerbatim {
         var endsSentence: Bool { trail.contains(where: { ".!?".contains($0) }) }
         var hasComma: Bool { trail.contains(",") }
         var text: String { lead + core + trail }
+        var isLoneLetter: Bool { core.count == 1 && core.first!.isLetter && key != "a" && key != "i" }
+        var hasDigit: Bool { core.contains(where: \.isNumber) }
     }
 
-    public static func apply(_ text: String) -> String {
-        var tokens = tokenize(text)
-        guard !tokens.isEmpty else { return text }
-        tokens = removeFillers(tokens)
-        tokens = removeLikeFiller(tokens)
-        tokens = collapseRepeats(tokens)
-        return tidy(tokens.map(\.text).joined(separator: " "))
+    public static func apply(_ text: String) -> String { applyNoting(text).text }
+
+    /// The cleaned text, plus what was taken out and why.
+    public static func applyNoting(_ text: String) -> (text: String, edits: [Edit]) {
+        var edits: [Edit] = []
+        var tokens = tokenize(fixGlitches(text, &edits))
+        guard !tokens.isEmpty else { return (text, []) }
+        tokens = removeFillers(tokens, &edits)
+        tokens = removeLikeFiller(tokens, &edits)
+        tokens = removeFragments(tokens, &edits)
+        tokens = collapseRepeats(tokens, &edits)
+        return (tidy(tokens.map(\.text).joined(separator: " ")), edits)
     }
 
     // MARK: - Steps
@@ -53,10 +120,33 @@ public enum CleanVerbatim {
         }
     }
 
-    static func removeFillers(_ input: [Token]) -> [Token] {
+    /// A few words either side of `range`, for the log.
+    private static func near(_ tokens: [Token], _ range: Range<Int>) -> String {
+        let lo = max(0, range.lowerBound - 3), hi = min(tokens.count, range.upperBound + 3)
+        return tokens[lo..<hi].map(\.text).joined(separator: " ")
+    }
+
+    private static func note(_ kind: Edit.Kind, _ tokens: [Token], _ range: Range<Int>, _ edits: inout [Edit]) {
+        edits.append(Edit(kind: kind, cut: tokens[range].map(\.text).joined(separator: " "), near: near(tokens, range)))
+    }
+
+    /// The recognizer writes "<unk>" for a sound it has no letter for. Between two letters that is
+    /// an ampersand ("Q<unk>A"); anywhere else it is noise.
+    static func fixGlitches(_ text: String, _ edits: inout [Edit]) -> String {
+        guard text.contains("<unk>") else { return text }
+        for word in text.split(whereSeparator: \.isWhitespace) where word.contains("<unk>") {
+            edits.append(Edit(kind: .glitch, cut: "<unk>", near: String(word)))
+        }
+        return text
+            .replacingOccurrences(of: #"(?<=\p{L})<unk>(?=\p{L})"#, with: "&", options: .regularExpression)
+            .replacingOccurrences(of: #"\s*<unk>"#, with: "", options: .regularExpression)
+    }
+
+    static func removeFillers(_ input: [Token], _ edits: inout [Edit]) -> [Token] {
         var out: [Token] = []
-        for t in input {
+        for (i, t) in input.enumerated() {
             guard fillers.contains(t.key) else { out.append(t); continue }
+            note(.filler, input, i..<(i + 1), &edits)
             guard !out.isEmpty else { continue }
             if t.endsSentence {
                 // "and then, um." → "and then."
@@ -70,14 +160,18 @@ public enum CleanVerbatim {
         return out
     }
 
-    static func removeLikeFiller(_ input: [Token]) -> [Token] {
+    static func removeLikeFiller(_ input: [Token], _ edits: inout [Edit]) -> [Token] {
         var out: [Token] = []
-        for t in input {
+        for (i, t) in input.enumerated() {
             if t.key == "like", t.hasComma, !t.endsSentence {
                 let sentenceInitial = out.isEmpty || out[out.count - 1].endsSentence
                 let afterComma = !out.isEmpty && out[out.count - 1].hasComma
-                if sentenceInitial { continue }                 // "Like, I think" → "I think"
+                if sentenceInitial {                            // "Like, I think" → "I think"
+                    note(.filler, input, i..<(i + 1), &edits)
+                    continue
+                }
                 if afterComma {                                 // "and, like, Elijah" → "and Elijah"
+                    note(.filler, input, i..<(i + 1), &edits)
                     out[out.count - 1].trail = out[out.count - 1].trail.replacingOccurrences(of: ",", with: "")
                     continue
                 }
@@ -87,7 +181,41 @@ public enum CleanVerbatim {
         return out
     }
 
-    static func collapseRepeats(_ input: [Token]) -> [Token] {
+    /// Drops the cut-off start of a word: "w white paper", "s within the folder", "sh really quickly".
+    /// The recognizer writes these as a lone lowercase letter or two with no punctuation.
+    static func removeFragments(_ input: [Token], _ edits: inout [Edit]) -> [Token] {
+        var out: [Token] = []
+        for (i, t) in input.enumerated() {
+            if isFragment(input, at: i) { note(.fragment, input, i..<(i + 1), &edits) } else { out.append(t) }
+        }
+        return out
+    }
+
+    static func isFragment(_ tokens: [Token], at i: Int) -> Bool {
+        let t = tokens[i]
+        guard i + 1 < tokens.count, t.lead.isEmpty, t.trail.isEmpty, !t.core.isEmpty, t.core.count <= 3,
+              t.core.allSatisfy({ $0.isLetter && $0.isLowercase }) else { return false }
+        let next = tokens[i + 1]
+        guard !next.core.isEmpty, next.lead.isEmpty else { return false }
+        // Spelling something out ("j i m m y"), or next to a number ("5 g", "v 2"): not a fragment.
+        let neighbours = tokens[max(0, i - 2)..<min(tokens.count, i + 3)].enumerated().filter { $0.offset + max(0, i - 2) != i }.map(\.element)
+        if neighbours.contains(where: \.isLoneLetter) { return false }
+        if next.hasDigit || (i > 0 && tokens[i - 1].hasDigit) { return false }
+        let known = fragmentLetters.contains(t.key) || fragmentStarts.contains(t.key)
+        // The start of the very next word: "w white", "un unmirrored", "th the".
+        if next.key.count > t.key.count, next.key.hasPrefix(t.key), known || !isWord(t.key) { return true }
+        guard known else { return false }
+        if i > 0, labelWords.contains(tokens[i - 1].key), !tokens[i - 1].endsSentence { return false }
+        if compoundSeconds.contains(next.key) { return false }
+        return true
+    }
+
+    /// Short everyday words, so "be because" or "in inside" are never read as a fragment and its word.
+    private static func isWord(_ w: String) -> Bool {
+        Glossary.CommonWords.contains(w) || stutterWords.contains(w)
+    }
+
+    static func collapseRepeats(_ input: [Token], _ edits: inout [Edit]) -> [Token] {
         var tokens = input
         var changed = true
         while changed {
@@ -100,8 +228,9 @@ public enum CleanVerbatim {
                     guard first.map(\.key) == second.map(\.key), !first.contains(where: { $0.core.isEmpty }) else { continue }
                     // Never across a sentence end, and nothing inside the first copy may end a sentence.
                     guard !first.contains(where: \.endsSentence) else { continue }
-                    if n == 1 && !stutterWords.contains(first.first!.key) { continue }
+                    if n == 1 && !isStutter(first.first!) { continue }
                     // Keep the second copy (it carries the sentence on) and drop the first.
+                    note(.repeat, tokens, (i - n)..<i, &edits)
                     let keepCapital = first.first!.core.first?.isUppercase == true
                     tokens.removeSubrange((i - n)..<i)
                     if keepCapital, let c = tokens[i - n].core.first, c.isLowercase {
@@ -113,6 +242,15 @@ public enum CleanVerbatim {
             }
         }
         return tokens
+    }
+
+    /// Whether one word said twice in a row is a stutter. Small function words always are; any
+    /// other word is unless people double it on purpose, it is a number or a lone letter, or
+    /// there is punctuation between the two ("wait, wait").
+    static func isStutter(_ first: Token) -> Bool {
+        if stutterWords.contains(first.key) { return true }
+        if doubledOnPurpose.contains(first.key) || first.hasDigit || first.core.count == 1 { return false }
+        return first.trail.isEmpty
     }
 
     /// Fix spacing and capitals left behind by removals.
@@ -145,7 +283,9 @@ public enum CleanVerbatim {
             } else if ".!?".contains(c) {
                 // Only a sentence end when what follows is a space, a closing quote, or nothing: "readme.md" stays lowercase.
                 let next = i + 1 < chars.count ? chars[i + 1] : " "
-                capitalizeNext = next.isWhitespace || "\"”)".contains(next)
+                // "p.m." and "e.g." end in a period without ending the sentence.
+                let abbreviation = c == "." && i >= 3 && chars[i - 2] == "." && chars[i - 1].isLetter && chars[i - 3].isLetter
+                capitalizeNext = !abbreviation && (next.isWhitespace || "\"”)".contains(next))
             } else if !c.isWhitespace && !"\"“(".contains(c) {
                 capitalizeNext = false
             }

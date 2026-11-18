@@ -113,6 +113,27 @@ enum PanelRenderer {
         shots.append(("panel-5c-glossary-az", az))
         shots.append(("panel-6-settings", makeModel(page: .settings)))
         shots.append(("panel-7-empty", makeModel(page: .history, empty: true)))
+        // The Raw switch: one row hovered (switch offered), one flipped to its raw words; and a name
+        // learned from its spelling.
+        let rawItems: [History.Item] = [
+            History.Item(time: now.addingTimeInterval(-40), kind: .dictation, app: "Claude",
+                         text: "So within the launch folder there's just the dated packets, and the Q&A page should generate the summary.",
+                         raw: "Um, so s within the the launch folder there's just the dated packets, and the Q<unk>A page should generate generate the summary.",
+                         fixes: [], reply: nil, delivery: nil),
+            event(-110, AppEvent(time: now.addingTimeInterval(-110), kind: .glossaryAdded, heard: "Neve", write: "Niamh", source: "learned")),
+            History.Item(time: now.addingTimeInterval(-120), kind: .dictation, app: "Claude",
+                         text: "Send the draft to Niamh N-I-A-M-H and ask her what she thinks of the w white paper idea.",
+                         raw: "Send the draft to Neve N-I-A-M-H and ask her what she thinks of the w white paper idea.",
+                         fixes: ["Neve → Niamh"], reply: nil, delivery: nil),
+            History.Item(time: now.addingTimeInterval(-400), kind: .dictation, app: "Slack",
+                         text: "Can we move the review to Thursday at two?", raw: "Can we move the review to Thursday at two?",
+                         fixes: [], reply: nil, delivery: nil),
+        ]
+        let rawModel = makeModel(page: .history)
+        rawModel.history.replaceAll(rawItems)
+        rawModel.showingRaw = [rawItems[0].id]
+        rawModel.previewHover = rawItems[2].id
+        shots.append(("panel-11-raw", rawModel))
         let copied = makeModel(page: .history)
         copied.copied = items[5].id
         shots.append(("panel-8-copied", copied))

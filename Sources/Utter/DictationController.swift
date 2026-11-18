@@ -32,6 +32,9 @@ final class DictationController: FnKeyMonitorDelegate {
     var onChange: (() -> Void)?
     /// Every finished dictation, for the panel's history.
     var onDictation: ((DictationLog.Entry) -> Void)?
+    /// A name spelled out loud in a dictation ("Sara S-A-R-A-H"). Returns whether it was new
+    /// and is now in the glossary.
+    var onLesson: ((SpelledNames.Lesson) -> Bool)?
     /// What Sean said to Utter (⇧ fn), cleaned of fillers but not glossary-fixed.
     var onCommand: ((_ text: String, _ raw: String) -> Void)?
 
@@ -248,12 +251,12 @@ final class DictationController: FnKeyMonitorDelegate {
             if self.engine == nil { self.pill.show(busy) }
             var texts: [String] = []
             for p in parts { texts.append(await p.value) }
-            await self.deliver(raw: ChunkJoiner.join(texts), session: s,
+            await self.deliver(raw: ChunkJoiner.join(texts), session: s, samples: all,
                          audioSeconds: audioSeconds, waitSeconds: Date().timeIntervalSince(started))
         }
     }
 
-    private func deliver(raw: String, session s: Session, audioSeconds: Double, waitSeconds: Double) async {
+    private func deliver(raw: String, session s: Session, samples: [Float], audioSeconds: Double, waitSeconds: Double) async {
         working = false
         if case .failed(let reason) = engineState {
             pill.show(.message("My speech model didn't load: \(reason)"), autoHideAfter: 4)
@@ -266,7 +269,8 @@ final class DictationController: FnKeyMonitorDelegate {
             return
         }
         let fixed = glossary.applyWithChanges(raw)
-        var final = CleanVerbatim.apply(fixed.text)
+        let tidied = CleanVerbatim.applyNoting(fixed.text)
+        var final = tidied.text
         guard !final.isEmpty else { nothingHeard(s); return }
         // Glossary rows that need judgment ("Eli": Elijah at work, Elias in book club): only when
         // one of their words is here, and never for more than 1.5 s.
@@ -282,6 +286,13 @@ final class DictationController: FnKeyMonitorDelegate {
                 }
             }
         }
+        // A name said and then spelled out is learned on the spot, and fixed in this dictation too.
+        var learned: [String] = []
+        for lesson in SpelledNames.lessons(in: raw) where onLesson?(lesson) == true {
+            final = SpelledNames.apply(lesson, to: final)
+            changes.append(.init(from: lesson.heard, to: lesson.write))
+            learned.append(lesson.write)
+        }
         // So back-to-back dictations don't run together.
         if let last = final.last, ".!?".contains(last) { final += " " }
 
@@ -295,6 +306,10 @@ final class DictationController: FnKeyMonitorDelegate {
         }
 
         let after = AfterDictation.current
+        var entry = DictationLog.Entry(time: Date(), app: s.app, raw: raw, final: final, changes: changes.map(\.description),
+                                       audioSeconds: audioSeconds, waitSeconds: waitSeconds, cleanup: tidied.edits)
+        if log.enabled, s.app != "simulation" { AudioKeep.save(samples, time: entry.time, sampleRate: Double(SpeechEngine.sampleRate)) }
+        let label = { (verb: String) in Self.doneLabel(verb: verb, fixed: changes.map(\.to), learned: learned, after: after) }
         if s.app == "simulation" || dryRun {
             // Tests don't touch the clipboard.
         } else if after == .copy {
@@ -303,44 +318,42 @@ final class DictationController: FnKeyMonitorDelegate {
             // Only the panel's history gets it; the clipboard and the focused app are left alone.
         } else if Permissions.paste {
             // "Pasted" waits until the focused app has actually read the text.
-            let entry = DictationLog.Entry(time: Date(), app: s.app, raw: raw, final: final, changes: changes.map(\.description),
-                                           audioSeconds: audioSeconds, waitSeconds: waitSeconds)
-            let label = Self.doneLabel(verb: "Pasted", fixed: changes.map(\.to), after: after)
+            let pasted = entry
             paster.paste(final) { [weak self] result in
                 guard let self else { return }
                 switch result {
                 case .landed:
-                    pill.show(.done(label), autoHideAfter: 1.4)
-                    record(entry)
+                    pill.show(.done(label("Pasted")), autoHideAfter: learned.isEmpty ? 1.4 : 2.4)
+                    record(pasted)
                 case .missed:
                     UtterLog.write("paste not taken by \(s.app ?? "the focused app"); left on the clipboard")
                     if session == nil { pill.show(.message("Copied · press ⌘V to paste"), autoHideAfter: 3) }
-                    var copied = entry
+                    var copied = pasted
                     copied.delivery = "copy"
                     record(copied)
                 case .cutShort:
-                    record(entry)
+                    record(pasted)
                 }
             }
             return
         } else {
             paster.copy(final)
             pill.show(.message("Copied. I need Accessibility to paste for you"), autoHideAfter: 3.5)
-            record(.init(time: Date(), app: s.app, raw: raw, final: final, changes: changes.map(\.description),
-                         audioSeconds: audioSeconds, waitSeconds: waitSeconds, delivery: "copy"))
+            entry.delivery = "copy"
+            record(entry)
             return
         }
 
         let verb = after == .copy ? "Copied" : after == .save ? "Saved to the menu bar" : "Pasted"
-        pill.show(.done(Self.doneLabel(verb: verb, fixed: changes.map(\.to), after: after)), autoHideAfter: 1.4)
-
-        record(.init(time: Date(), app: s.app, raw: raw, final: final, changes: changes.map(\.description),
-                     audioSeconds: audioSeconds, waitSeconds: waitSeconds,
-                     delivery: after == .copy ? "copy" : after == .save ? "save" : nil))
+        pill.show(.done(label(verb)), autoHideAfter: learned.isEmpty ? 1.4 : 2.4)
+        entry.delivery = after == .copy ? "copy" : after == .save ? "save" : nil
+        record(entry)
     }
 
     /// "Pasted", "Copied · fixed NOVA", or "Fixed NOVA, Tighe" (a paste that fixed names).
-    private static func doneLabel(verb: String, fixed: [String], after: AfterDictation) -> String {
+    /// A name just learned from its spelling comes first: "Learned Sarah".
+    private static func doneLabel(verb: String, fixed: [String], learned: [String] = [], after: AfterDictation) -> String {
+        if !learned.isEmpty { return "Learned " + learned.prefix(2).joined(separator: ", ") }
         let names = NSOrderedSet(array: fixed).array as! [String]
         if names.isEmpty { return verb }
         if after != .paste { return verb + " · fixed " + names.prefix(2).joined(separator: ", ") }

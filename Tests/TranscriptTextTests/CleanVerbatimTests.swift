@@ -67,4 +67,57 @@ struct CleanVerbatimTests {
         #expect(ChunkJoiner.join(["only the two eyes", "Then the second thing"]) == "only the two eyes. Then the second thing")
         #expect(ChunkJoiner.join(["ask", "Justin about it"]) == "ask Justin about it")
     }
+
+    // The three below come from Sean's own dictation history (2026-11-18): each rule was replayed
+    // over 588 real dictations and every cut read by hand.
+
+    @Test func cutOffWordStartsGo() {
+        check("And then the only w white paper that was written.", "And then the only white paper that was written.")
+        check("So s within the shared folder there's just dated packets.", "So within the shared folder there's just dated packets.")
+        check("Yeah, I mean sh really quickly show me the split.", "Yeah, I mean really quickly show me the split.")
+        check("Do you s foresee these tools working?", "Do you foresee these tools working?")
+        check("Back to like the r the overall risk plan.", "Back to like the overall risk plan.")
+        check("Then we will tr we'll pick the winner.", "Then we will we'll pick the winner.")
+    }
+
+    @Test func loneLettersThatMeanSomethingStay() {
+        for keep in [
+            "Let's go with plan b for now.",
+            "Press s to save and hold shift f to search.",
+            "Put it in column d of the sheet.",
+            "It takes about 60 s every time.",
+            "My friend spells it j i m m y.",
+            "We sell b to b software.",
+            "Wear the t shirt and check the p value.",
+            "Ana de la Cruz said to give em a call.",
+            "The x axis is time and the y axis is cost.",
+            "Do you want a or b for lunch?",
+            "Send it to youtube.com and gmail.com by 11.59 p.m. tonight.",
+        ] { check(keep, keep) }
+    }
+
+    @Test func doubledWordsCollapseUnlessDoubledOnPurpose() {
+        check("You wanted to generate generate the image.", "You wanted to generate the image.")
+        check("It should use as as a column.", "It should use as a column.")
+        check("Phases like needs needs needs work.", "Phases like needs work.")
+        check("Hovering over things should should work.", "Hovering over things should work.")
+        for keep in [
+            "That is very very important.", "No no, not that one.", "I think that that is fine.",
+            "Blah blah blah, you get it.", "Wait, wait, hold on.", "It was one one two three.",
+            "It's not not working.", "Really really good.", "He had had enough.",
+        ] { check(keep, keep) }
+    }
+
+    @Test func recognizerMarksBecomeAmpersandsOrGo() {
+        check("Then we move to the Q<unk>A timer.", "Then we move to the Q&A timer.")
+        check("It was <unk> a long day.", "It was a long day.")
+    }
+
+    @Test func everyCutIsRecordedWithItsKind() {
+        let r = CleanVerbatim.applyNoting("Um, so s within the the Q<unk>A folder we generate generate it.")
+        #expect(r.text == "So within the Q&A folder we generate it.")
+        #expect(r.edits.map(\.kind) == [.glitch, .filler, .fragment, .repeat, .repeat])
+        #expect(r.edits.first { $0.kind == .fragment }?.cut == "s")
+        #expect(CleanVerbatim.applyNoting("Nothing to fix here.").edits.isEmpty)
+    }
 }

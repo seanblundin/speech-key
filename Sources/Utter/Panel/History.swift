@@ -18,6 +18,8 @@ final class History: ObservableObject {
         let kind: Kind
         let app: String?
         var text: String
+        /// A dictation's words exactly as the recognizer heard them, before names and cleanup.
+        var raw: String? = nil
         /// Glossary fixes made automatically, like "Tieg → Tighe".
         let fixes: [String]
         /// For a command: what the agent did or said.
@@ -26,6 +28,12 @@ final class History: ObservableObject {
         var delivery: String?
         var event: AppEvent?
         var id: Date { time }
+
+        /// The raw words, when they differ from what was pasted by more than spacing or capitals.
+        var rawIfDifferent: String? {
+            guard isDictation, let raw, RawDiff.differs(raw: raw, cleaned: text) else { return nil }
+            return raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
 
         var isCommand: Bool { kind == .command }
         var isDictation: Bool { kind == .dictation }
@@ -46,7 +54,8 @@ final class History: ObservableObject {
         self.log = log
         self.events = events
         guard loadFromDisk else { return }
-        let all = DictationLog.all().map(Self.item) + EventLog.all().map(Self.item)
+        // Raw copies are a signal for the cleanup report, not something to show.
+        let all = DictationLog.all().map(Self.item) + EventLog.all().filter { $0.kind != .rawCopied }.map(Self.item)
         items = all.sorted { $0.time > $1.time }
     }
 
@@ -80,10 +89,11 @@ final class History: ObservableObject {
 
     private static func item(_ e: DictationLog.Entry) -> Item {
         Item(time: e.time, kind: e.kind == "command" ? .command : .dictation, app: e.app,
-             text: e.final.trimmingCharacters(in: .whitespaces), fixes: e.changes, reply: e.reply, delivery: e.delivery)
+             text: e.final.trimmingCharacters(in: .whitespaces), raw: e.kind == nil ? e.raw : nil,
+             fixes: e.changes, reply: e.reply, delivery: e.delivery)
     }
 
     private static func item(_ e: AppEvent) -> Item {
-        Item(time: e.time, kind: .event(e.kind), app: nil, text: "", fixes: [], reply: nil, delivery: nil, event: e)
+        Item(time: e.time, kind: .event(e.kind), app: nil, text: "", raw: nil, fixes: [], reply: nil, delivery: nil, event: e)
     }
 }

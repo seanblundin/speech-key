@@ -216,12 +216,15 @@ private struct HistoryRow: View {
     }
 }
 
-/// One dictation. Click copies it; double-click a word to fix it.
+/// One dictation. Click copies it; double-click a word to fix it. When the cleanup changed
+/// anything, "Raw" flips the row to the words exactly as heard (what was cut is tinted), and a
+/// click then copies those instead (Sean, 2026-11-18: see it and copy it, in the rare moment the
+/// raw words are the useful ones).
 private struct DictationRow: View {
     let item: History.Item
     @ObservedObject var model: PanelModel
     @State private var draft: String
-    @State private var hovering = false
+    @State private var pointerOver = false
 
     init(item: History.Item, model: PanelModel) {
         self.item = item
@@ -231,6 +234,10 @@ private struct DictationRow: View {
 
     private var editing: Bool { model.editing == item.id }
     private var copied: Bool { model.copied == item.id }
+    private var hovering: Bool { pointerOver || model.previewHover == item.id }
+    private var showingRaw: Bool { model.showingRaw.contains(item.id) }
+    /// The raw words, while the row is showing them.
+    private var raw: String? { showingRaw ? item.rawIfDifferent : nil }
 
     private var fixes: [(heard: String, correct: String)] {
         item.fixes.compactMap { f in
@@ -239,14 +246,21 @@ private struct DictationRow: View {
         }
     }
 
+    private func copy() { if raw != nil { model.copyRaw(item) } else { model.copyItem(item) } }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            EditableText(text: $draft, fixes: fixes, isEditing: editing,
-                         onClick: { model.copyItem(item) },
-                         onDoubleClick: { model.copied = nil; model.editing = item.id },
-                         onCommit: { model.commit(item, newText: draft) },
-                         onCancel: { draft = item.text; model.editing = nil },
-                         onEndEditing: { if model.editing == item.id { draft = item.text; model.editing = nil } })
+            if let raw {
+                EditableText(text: .constant(raw), highlights: RawDiff.onlyInRaw(raw: raw, cleaned: item.text),
+                             isEditing: false, onClick: copy)
+            } else {
+                EditableText(text: $draft, fixes: fixes, isEditing: editing,
+                             onClick: copy,
+                             onDoubleClick: { model.copied = nil; model.editing = item.id },
+                             onCommit: { model.commit(item, newText: draft) },
+                             onCancel: { draft = item.text; model.editing = nil },
+                             onEndEditing: { if model.editing == item.id { draft = item.text; model.editing = nil } })
+            }
             HStack(spacing: 4) {
                 Text(PanelFormat.clockTime(item.time))
                 if let app = item.app { Text("·"); Text(app) }
@@ -255,22 +269,31 @@ private struct DictationRow: View {
                 if editing {
                     Text("↩ save   esc cancel").foregroundStyle(.secondary)
                 } else if copied {
-                    Label("Copied", systemImage: "checkmark").foregroundStyle(Color(nsColor: .systemGreen))
+                    Label(raw != nil ? "Copied raw" : "Copied", systemImage: "checkmark").foregroundStyle(Color(nsColor: .systemGreen))
+                } else if raw != nil {
+                    Text("Exactly as heard · click to copy").foregroundStyle(.secondary)
                 } else if hovering {
                     Text("Click to copy · double-click to edit")
                 }
+                if !editing, item.rawIfDifferent != nil, hovering || showingRaw {
+                    RawToggle(on: Binding(get: { showingRaw }, set: { on in
+                        if on { model.showingRaw.insert(item.id) } else { model.showingRaw.remove(item.id) }
+                    }))
+                }
             }
             .font(.system(size: 11)).foregroundStyle(.tertiary).lineLimit(1)
+            .frame(height: 16)
         }
         .padding(.horizontal, 12).padding(.vertical, 9)
         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(fill))
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
             .strokeBorder(Color.accentColor.opacity(editing ? 0.45 : 0), lineWidth: 1))
         .contentShape(Rectangle())
-        .onTapGesture { if !editing { model.copyItem(item) } }
-        .onHover { hovering = $0 }
+        .onTapGesture { if !editing { copy() } }
+        .onHover { pointerOver = $0 }
         .animation(.easeOut(duration: 0.12), value: copied)
         .animation(.easeOut(duration: 0.1), value: hovering)
+        .animation(.easeOut(duration: 0.12), value: showingRaw)
         // Reverts happen only on cancel (above). Reverting whenever editing ended raced the save
         // and put the old text back on screen (2026-10-20).
         .onChange(of: item.text) { draft = $0 }
@@ -284,7 +307,29 @@ private struct DictationRow: View {
     private var fill: Color {
         if editing { return Color.accentColor.opacity(0.07) }
         if copied { return Color(nsColor: .systemGreen).opacity(0.08) }
+        if showingRaw { return Color(nsColor: .systemOrange).opacity(hovering ? 0.10 : 0.07) }
         return Color.primary.opacity(hovering ? 0.05 : 0)
+    }
+}
+
+/// The small switch on a dictation row between the cleaned text and the raw words.
+private struct RawToggle: View {
+    @Binding var on: Bool
+    @State private var hovering = false
+
+    var body: some View {
+        Button { on.toggle() } label: {
+            Text(on ? "Cleaned" : "Raw")
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(on ? Color(nsColor: .systemOrange) : Color.secondary)
+                .padding(.horizontal, 7).frame(height: 16)
+                .background(Capsule(style: .continuous).fill(
+                    on ? Color(nsColor: .systemOrange).opacity(hovering ? 0.22 : 0.15) : Color.primary.opacity(hovering ? 0.14 : 0.08)))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(on ? "Back to the cleaned text" : "See and copy the words exactly as heard")
     }
 }
 
@@ -409,6 +454,7 @@ private struct GlossaryEventRow: View {
         case "panel": return "from a fixed word"
         case "tab": return "in the Glossary tab"
         case "undo": return "undo"
+        case "learned": return "learned when you spelled it out"
         default: return ""
         }
     }

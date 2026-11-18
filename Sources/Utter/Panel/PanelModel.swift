@@ -52,6 +52,10 @@ final class PanelModel: ObservableObject {
     @Published var page: Page = .history
     /// The dictation being edited (double-clicked), if any.
     @Published var editing: Date?
+    /// Dictation rows showing their raw words (History's Raw switch).
+    @Published var showingRaw: Set<Date> = []
+    /// Design renders only: a row to draw as if the pointer were over it.
+    var previewHover: Date?
     /// The history row or meeting just copied, for its "Copied" tick.
     @Published var copied: Date?
     @Published var copiedMeeting: URL?
@@ -108,6 +112,15 @@ final class PanelModel: ObservableObject {
     func copyItem(_ item: History.Item) {
         copy(item.text)
         tick(item.id)
+    }
+
+    /// The raw words instead (History's Raw view). Logged, because reaching for the raw words
+    /// means the cleanup got in the way that time.
+    func copyRaw(_ item: History.Item) {
+        guard let raw = item.rawIfDifferent else { return copyItem(item) }
+        copy(raw)
+        tick(item.id)
+        history.events.append(AppEvent(time: Date(), kind: .rawCopied, dictation: item.time))
     }
 
     /// A meeting or snapshot row: copy the file's path (ready to paste into Claude).

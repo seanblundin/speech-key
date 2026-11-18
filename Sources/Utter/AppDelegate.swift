@@ -73,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         commands = CommandRunner(brain: brain, glossary: glossaryStore, meeting: meeting, pill: controller.pill,
                                  history: history, log: controller.log)
         controller.onDictation = { [weak self] in self?.history.add($0) }
+        controller.onLesson = { [weak self] in self?.glossaryStore.learn($0) ?? false }
         controller.onCommand = { [weak self] text, raw in self?.commands.run(text, raw: raw) }
         panel = PanelController(model: makePanelModel(brain: brain))
         panel.model.titler = titler

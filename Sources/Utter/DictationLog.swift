@@ -1,7 +1,8 @@
 import Foundation
+import TranscriptText
 
 /// A local, text-only record of every dictation, for harvesting new glossary words when Sean asks.
-/// Never uploaded, never contains audio.
+/// Never uploaded. Audio is separate and off by default (`AudioKeep`).
 ///
 /// Two files in `~/Library/Application Support/Utter/`:
 /// - `dictations.jsonl`: one line per dictation, and per thing Sean said to Utter (`kind: "command"`).
@@ -22,6 +23,8 @@ struct DictationLog {
         var reply: String? = nil
         /// "copy" or "save" when the dictation wasn't pasted (Settings › After you release 🌐).
         var delivery: String? = nil
+        /// What the cleanup took out, by kind (see `CleanVerbatim.Edit`). nil in entries from before 0.2.3.
+        var cleanup: [CleanVerbatim.Edit]? = nil
     }
 
     struct Correction: Codable {
@@ -65,7 +68,7 @@ struct DictationLog {
             guard let after = latest[e.time] else { return e }
             return Entry(time: e.time, app: e.app, raw: e.raw, final: after, changes: e.changes,
                          audioSeconds: e.audioSeconds, waitSeconds: e.waitSeconds, kind: e.kind, reply: e.reply,
-                         delivery: e.delivery)
+                         delivery: e.delivery, cleanup: e.cleanup)
         }
     }
 

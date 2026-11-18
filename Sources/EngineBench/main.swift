@@ -5,6 +5,9 @@ import SpeechEngine
 // engine-bench: runs the real engine pipeline on audio files and reports speed and glossary hits.
 //
 // Usage: engine-bench [--model ultra|v3|v2] [--no-boost] [--glossary glossary.md] [--clips clips.json] [--json out.json] file.wav...
+//        engine-bench --history [--model …] [--glossary …] [--limit N]
+//          Scores a model on your own speech: every recording Speech Key kept (the `keepAudio` setting)
+//          is transcribed again and compared with what the app wrote that day.
 // File names like "slack1__am_michael.wav" are matched to clips.json entries by the part before "__".
 
 struct Clip: Decodable { let id: String; let ref: String; let terms: [String] }
@@ -27,6 +30,8 @@ let glossaryPath = take("--glossary")
 let jsonPath = take("--json")
 let concurrent = flag("--concurrent")
 let stressRounds = take("--stress").flatMap(Int.init)
+let history = flag("--history")
+let historyLimit = take("--limit").flatMap(Int.init) ?? .max
 let files = args
 
 let clips: [String: Clip] = {
@@ -52,6 +57,50 @@ if boost { print("boosting \(vocab.count) terms: " + vocab.map(\.canonical).join
 let converter = AudioConverter()
 struct Row: Encodable { let file: String; let seconds: Double; let audioSeconds: Double; let raw: String; let final: String; let hits: Int; let terms: Int; let missed: [String] }
 var rows: [Row] = []
+
+if history {
+    // The app's own log and kept recordings. A recording's name is its dictation's time.
+    let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("SpeechKey")
+    var logged: [String: String] = [:]     // time (with - for :) → raw words that day
+    for line in ((try? String(contentsOf: dir.appendingPathComponent("dictations.jsonl"), encoding: .utf8)) ?? "").split(separator: "\n") {
+        guard let o = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+              let t = o["time"] as? String, let raw = o["raw"] as? String else { continue }
+        logged[t.replacingOccurrences(of: ":", with: "-")] = raw
+    }
+    let audio = ((try? FileManager.default.contentsOfDirectory(at: dir.appendingPathComponent("audio"), includingPropertiesForKeys: nil)) ?? [])
+        .filter { $0.pathExtension == "m4a" }.sorted { $0.lastPathComponent > $1.lastPathComponent }.prefix(historyLimit)
+    guard !audio.isEmpty else {
+        print("No kept recordings in \(dir.path)/audio. Turn them on with:\n  defaults write ~/Library/Preferences/com.seanblundin.utter.plist keepAudio -int 200")
+        exit(0)
+    }
+    func words(_ s: String) -> [String] {
+        s.lowercased().split(whereSeparator: \.isWhitespace).map { $0.filter { $0.isLetter || $0.isNumber || $0 == "'" } }.filter { !$0.isEmpty }
+    }
+    var same = 0, total = 0, identical = 0, audioSecs = 0.0, workSecs = 0.0
+    for (i, file) in audio.enumerated() {
+        let name = file.deletingPathExtension().lastPathComponent
+        guard let then = logged[name], let samples = try? converter.resampleAudioFile(file) else { continue }
+        if i == 0 { _ = try await engine.text(samples: samples, vocabulary: vocab) }   // warm-up
+        let start = Date()
+        let now = try await engine.text(samples: samples, vocabulary: vocab)
+        workSecs += Date().timeIntervalSince(start)
+        audioSecs += Double(samples.count) / 16_000
+        let a = words(then), b = words(now)
+        let diff = b.difference(from: a)
+        var gone: [String] = [], new: [String] = []
+        for c in diff { switch c { case .remove(_, let w, _): gone.append(w); case .insert(_, let w, _): new.append(w) } }
+        let changed = max(gone.count, new.count)
+        same += max(0, a.count - changed); total += a.count
+        if changed == 0 { identical += 1; continue }
+        print("\(name)  \(a.count) words, \(changed) differ")
+        print("   that day: \(gone.joined(separator: " "))")
+        print("   \(model.rawValue):" + String(repeating: " ", count: max(1, 9 - model.rawValue.count)) + new.joined(separator: " "))
+    }
+    print(String(format: "\nHISTORY %@: %d recordings, %.1f min of speech in %.1fs (%.0fx real time)", model.rawValue, audio.count, audioSecs / 60, workSecs, audioSecs / max(workSecs, 0.001)))
+    print(String(format: "Same words as that day: %.1f%% (%d of %d). Identical recordings: %d of %d.", total == 0 ? 0 : Double(same) / Double(total) * 100, same, total, identical, audio.count))
+    print("The app cuts long dictations at pauses and this run doesn't, so a few differences at the seams are expected even for the same model. Read the differing words: a better model fixes names and odd words; a worse one breaks ordinary ones.")
+    exit(0)
+}
 
 // Warm-up so the first timing isn't paying for Neural Engine compilation.
 if let first = files.first {

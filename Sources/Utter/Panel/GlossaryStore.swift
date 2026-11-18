@@ -6,7 +6,7 @@ import TranscriptText
 /// The file is one table (Heard as | Write as | Notes); an older file is converted on its first save.
 @MainActor
 final class GlossaryStore: ObservableObject {
-    enum Source: String { case voice, panel, tab, undo }
+    enum Source: String { case voice, panel, tab, undo, learned }
 
     enum Failure: LocalizedError {
         case unreadable(String)
@@ -79,6 +79,14 @@ final class GlossaryStore: ObservableObject {
         onChange?(AppEvent(time: Date(), kind: .glossaryAdded, heard: heard.joined(separator: ", "), write: correct,
                            source: source.rawValue))
         return "Got it: \(fix) from now on"
+    }
+
+    /// A name Sean spelled out loud in a dictation. Returns whether the glossary changed.
+    func learn(_ lesson: SpelledNames.Lesson) -> Bool {
+        guard let text = try? read(), Glossary(markdown: text).apply(lesson.heard) != lesson.write else { return false }
+        let before = rows.count
+        let reply = (try? add(heard: [lesson.heard], correct: lesson.write, source: .learned)) ?? ""
+        return reply.hasPrefix("Got it") || rows.count != before
     }
 
     /// Takes out fixes matching any of `words` (a heard form, or what a row writes).

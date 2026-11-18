@@ -27,6 +27,7 @@ public struct Glossary: @unchecked Sendable {
     public struct Change: Sendable, Hashable, CustomStringConvertible {
         public let from: String
         public let to: String
+        public init(from: String, to: String) { self.from = from; self.to = to }
         public var description: String { "\(from) → \(to)" }
     }
 

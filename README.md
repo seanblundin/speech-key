@@ -11,9 +11,10 @@ Download the signed app at **[speechkeyapp.com](https://speechkeyapp.com)**. It 
 - **Hold ⇧ fn:** talk to the agent instead of typing: "Jammy should be Jimmy", "remove Jimmy", "start a meeting", "take a snapshot", "undo that". Apple's on-device model reads the command, so it stays on the Mac.
 - **Esc** cancels.
 - **The menu-bar panel** has three tabs:
-  - **History:** every dictation, newest first. Click to copy, double-click to fix a word and teach the glossary.
+  - **History:** every dictation, newest first. Click to copy, double-click to fix a word and teach the glossary. When the cleanup changed anything, **Raw** flips a row to the words exactly as heard (what was cut is tinted) and a click copies those instead.
   - **Meetings:** past meetings with titles and one-line summaries written on the Mac.
   - **Glossary:** an editable table of names Speech Key should spell your way.
+- **Say a name, then spell it** ("Sara S-A-R-A-H") and Speech Key writes it that way from then on. The pill says "Learned Sarah"; History has the undo.
 - Don't want it pasted? Settings › "After you release 🌐" switches to **Copy** or **Save**.
 
 ### Meeting mode
@@ -28,10 +29,14 @@ Download the signed app at **[speechkeyapp.com](https://speechkeyapp.com)**. It 
 1. **Recognizer:** NVIDIA Parakeet TDT 0.6B (Moondream's "Ultra" fine-tune) on the Neural Engine, through [FluidAudio](https://github.com/FluidInference/FluidAudio). Long dictations are cut at pauses and transcribed while you talk, so letting go leaves only the last few seconds to do.
 2. **Name boosting:** a small second model (Parakeet CTC 110M) listens for glossary names. A suggested swap is kept only when it replaces something that isn't an ordinary word or a common first name.
 3. **Glossary:** a Markdown table (`Heard as | Write as | Notes`) in `~/Library/Application Support/SpeechKey/glossary.md`, or any file you pick in Settings. Plain rows are replaced as whole words. Rows whose notes set a condition ("only in book club talk") are decided by Apple's on-device model, and left alone when it's unsure.
-4. **Clean verbatim:** removes um and uh, stutters, back-to-back repeats, and "like" when it's set off by commas. Nothing else is rewritten.
+4. **Clean verbatim:** removes um and uh, words said twice in a row ("should should"), back-to-back repeats of a phrase, "like" when it's set off by commas, and the cut-off start of a word ("w white paper"). Rules only, no language model, so it adds no wait and does the same thing every time. Nothing is rewritten: every word left is one you said, in your order. Each cut is logged by kind.
 5. **Paste:** the clipboard holds a promise, so your old clipboard comes back only after the app has read the new text, and "Pasted" shows only when it did.
 
-Dictations are logged as text (never audio) to `~/Library/Application Support/SpeechKey/` so the panel can show them. Nothing is sent anywhere.
+Dictations are logged as text to `~/Library/Application Support/SpeechKey/` so the panel can show them. Audio is not kept unless you turn it on (below). Nothing is sent anywhere.
+
+**Is the cleanup working?** `SpeechKey --cleanup-report 7` prints the last 7 days: what was cut, by kind, with the words around each cut, plus the signs it got something wrong (raw text copied instead of the cleaned text, fixes made by hand). It is plain text, written to be read by you or pasted to an AI.
+
+**Trying another speech model.** `defaults write ~/Library/Preferences/com.seanblundin.utter.plist keepAudio -int 200` keeps the sound of your last 200 dictations on your Mac (lossless, about 1 MB a minute, never more than 300 MB). `engine-bench --history --model v3` then transcribes them again with another model and lists every word that came out differently, so a new model is judged on your own speech.
 
 On a MacBook Air M2: about 0.3 s to transcribe a 6-second clip, and 0.35–0.85 s from letting go to pasted at the end of a one-minute dictation.
 
@@ -44,7 +49,7 @@ scripts/build-app.sh          # build, sign, install to ~/Applications/Speech Ke
 scripts/swift.sh test         # glossary, clean-verbatim, hotkey and correction tests
 ```
 
-`SPEECHKEY_APPSTORE=1 scripts/build-app.sh` builds the sandboxed Mac App Store version instead (no Sparkle, Input Monitoring instead of Accessibility, folders kept as security-scoped bookmarks); `scripts/asc.py setup` and `scripts/release-appstore.sh` sign and upload it.
+`SPEECHKEY_APPSTORE=1 scripts/build-app.sh` builds a sandboxed version (no Sparkle, Input Monitoring instead of Accessibility, folders kept as security-scoped bookmarks). Apple rejected it for the Mac App Store in November 2026: the Store allows neither watching a key in other apps nor pasting into them. The Mac app ships from the website only; the build flag stays for reference.
 
 `build-app.sh` signs with the certificate named in `UTTER_IDENTITY` (default "Local Dictation Dev") and falls back to ad-hoc signing. A stable self-signed certificate keeps macOS permissions across rebuilds. `scripts/release.sh` builds a notarized DMG with a Developer ID certificate.
 
@@ -56,6 +61,7 @@ SK="dist/Speech Key.app/Contents/MacOS/SpeechKey"
 "$SK" --simulate-keys "d0 s150Hello_there. u4000"    # fn presses (ms) through the real rules; s<ms> speaks with `say`
 "$SK" --test-paste                                   # the paste confirmation, without touching the keyboard
 "$SK" --render-pill /tmp/pill                        # PNG of every pill state and panel page, light and dark
+"$SK" --cleanup-replay fragment,repeat               # rerun today's cleanup rules over your logged dictations and list every cut
 .build/release/engine-bench --glossary g.md --clips clips.json clips/*.wav   # engine speed and accuracy
 ```
 

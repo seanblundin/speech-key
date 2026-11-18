@@ -7,6 +7,9 @@ struct AppEvent: Codable, Equatable {
     enum Kind: String, Codable {
         case meetingStarted, meetingEnded, snapshot
         case glossaryAdded, glossaryRemoved, glossaryEdited
+        /// The raw words of a dictation were copied from History instead of the cleaned text.
+        /// Not shown in History; it is a sign for `CleanupReport` that the cleanup was in the way.
+        case rawCopied
     }
 
     let time: Date
@@ -27,8 +30,10 @@ struct AppEvent: Codable, Equatable {
     var oldWrite: String? = nil
     var oldNotes: String? = nil
     /// Where a glossary change came from: "voice" (Talk to Agent), "panel" (a fixed word),
-    /// "tab" (the Glossary tab), or "undo".
+    /// "tab" (the Glossary tab), "learned" (a name spelled out loud in a dictation), or "undo".
     var source: String? = nil
+    /// Raw copies: the `time` of the dictation.
+    var dictation: Date? = nil
 }
 
 struct EventLog {
