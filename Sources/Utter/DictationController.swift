@@ -97,7 +97,14 @@ final class DictationController: FnKeyMonitorDelegate {
         Task {
             do {
                 let e = try await SpeechEngine(model: .ultra, boostNames: true) { [weak self] fraction in
-                    Task { @MainActor in self?.downloadProgress = fraction }
+                    Task { @MainActor in
+                        guard let self else { return }
+                        // Logged every fifth of the way, so a slow or stuck first run can be seen afterwards.
+                        if Int(fraction * 5) > Int((self.downloadProgress ?? 0) * 5) || self.downloadProgress == nil {
+                            UtterLog.write(String(format: "speech model download %.0f%%", fraction * 100))
+                        }
+                        self.downloadProgress = max(self.downloadProgress ?? 0, fraction)
+                    }
                 }
                 engine = e
                 downloadProgress = nil

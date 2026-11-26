@@ -12,6 +12,16 @@ import SpeechEngine
 /// "Them" when the call is a single voice, otherwise "Speaker 1", "Speaker 2"… in the order
 /// people first spoke. Putting real names on the numbers is left to whoever reads the file.
 enum MeetingVoices {
+    /// Off unless turned on, while it is still being proven on real meetings (as of 0.2.4 it had
+    /// never named a live meeting; it is on for Sean's Mac):
+    ///   defaults write ~/Library/Preferences/com.seanblundin.utter.plist nameVoices -bool true
+    /// Off, a meeting is recorded and saved exactly as before: no stream recordings, no splitting,
+    /// and no voices chip in the Meetings tab. Never on macOS 14, where the splitter's models can
+    /// crash inside Core ML (an Apple bug fixed in macOS 15; see FluidAudio's diarization notes).
+    static var enabled: Bool {
+        UserDefaults.standard.bool(forKey: "nameVoices") && ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 15
+    }
+
     /// Shorter recordings are left alone: too little speech to tell voices apart.
     static let minimumSeconds: TimeInterval = 20
 

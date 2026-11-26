@@ -111,7 +111,7 @@ final class MeetingSession {
         let me = makeStream(MeetingTranscript.me)
         let meStats = streams.last!.stats
         let meClock = StreamClock(start: startedAt)
-        let micTape = StreamTape(folder: folder, name: StreamTape.mic)
+        let micTape = MeetingVoices.enabled ? StreamTape(folder: folder, name: StreamTape.mic) : nil
         tapes[MeetingTranscript.me] = micTape
         mic.onSamples = { let s = meClock.align($0); meStats.add(s); micTape?.append(s); me.yield(s) }
         do { try mic.start() } catch { UtterLog.write("mic start failed: \(error)"); throw error }
@@ -119,7 +119,7 @@ final class MeetingSession {
         let them = makeStream(MeetingTranscript.them)
         let themStats = streams.last!.stats
         let themClock = StreamClock(start: startedAt)
-        let callTape = StreamTape(folder: folder, name: StreamTape.call)
+        let callTape = MeetingVoices.enabled ? StreamTape(folder: folder, name: StreamTape.call) : nil
         tapes[MeetingTranscript.them] = callTape
         tap.onSamples = { let s = themClock.align($0); themStats.add(s); callTape?.append(s); them.yield(s) }
         do { try tap.start() } catch {

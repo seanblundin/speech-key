@@ -92,13 +92,13 @@ enum MeetingLibrary {
             let length = parts.compactMap(MeetingNames.partEnd).max()
             var meta = MeetingMeta.load(folder)
             // The first time a finished meeting is listed, note which voices it has (cheap, and kept).
-            if meta?.voices == nil, !files.contains(MeetingRecovery.liveName), let found = scanVoices(folder) {
+            if MeetingVoices.enabled, meta?.voices == nil, !files.contains(MeetingRecovery.liveName), let found = scanVoices(folder) {
                 MeetingMeta.update(folder) { $0.voices = found }
                 meta = MeetingMeta.load(folder)
             }
             return MeetingSummary(folder: folder, started: started, parts: parts.count, length: length,
                                   title: meta?.title, summary: meta?.summary, titleBy: meta?.titleBy, snapshots: meta?.snapshots,
-                                  voices: meta?.voices ?? [])
+                                  voices: MeetingVoices.enabled ? meta?.voices ?? [] : [])
         }
         return Array(summaries.sorted { $0.started > $1.started }.prefix(limit))
     }
