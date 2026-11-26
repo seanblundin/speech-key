@@ -14,8 +14,8 @@ public struct MeetingTranscript: Sendable {
         public let start: TimeInterval
         public let end: TimeInterval
         public let text: String
-        /// In a mic-only meeting, whose voice this is, told apart by sound: "Me" or "Speaker 2".
-        /// nil until the voices have been told apart (see `setVoices`).
+        /// Whose voice this is, told apart by sound: "Me", "Them" or "Speaker 2". nil until the
+        /// voices have been told apart (see `setVoices`); `speaker` stays the stream it came from.
         public var voice: String?
         public init(speaker: String, start: TimeInterval, end: TimeInterval, text: String, voice: String? = nil) {
             self.speaker = speaker
@@ -86,24 +86,34 @@ public struct MeetingTranscript: Sendable {
         md += "\(Self.clock(start))–\(Self.clock(end)) into the call"
         if number > 1 { md += ", starting \(Int(Self.overlap)) s before part \(number - 1) ended" }
         md += ".\n\n"
-        if micOnly { md += micOnlyNote }
+        md += headerNote
         md += Self.render(linesIn(start, end), micOnly: micOnly)
         return (number, name, md)
     }
 
-    /// Names the voices in a mic-only meeting: `names` maps a mic line's start time to "Me" or
-    /// "Speaker 2". Lines it doesn't mention keep what they had.
-    public mutating func setVoices(_ names: [TimeInterval: String]) {
-        for i in lines.indices where lines[i].speaker == Self.me {
-            if let name = names[lines[i].start] { lines[i].voice = name }
+    /// A line's identity for naming: its stream and start time.
+    public struct LineKey: Hashable, Sendable {
+        public let speaker: String
+        public let start: TimeInterval
+        public init(speaker: String, start: TimeInterval) { self.speaker = speaker; self.start = start }
+    }
+
+    /// Names the voices on the given streams ("Me" = mic, "Them" = computer audio). A line of
+    /// those streams that `names` doesn't mention goes back to having no name.
+    public mutating func setVoices(_ names: [LineKey: String], on streams: Set<String>) {
+        for i in lines.indices where streams.contains(lines[i].speaker) {
+            lines[i].voice = names[LineKey(speaker: lines[i].speaker, start: lines[i].start)]
         }
     }
+
+    /// The lines that reach the page: mic lines that only echo the call are left out.
+    public var heardLines: [Line] { Self.dropEcho(lines) }
 
     /// The whole meeting so far.
     public func fullMarkdown(now: TimeInterval) -> String {
         var md = "# Meeting \(Self.dateTime(startedAt))\(code.map { " · \($0)" } ?? "")\n\n"
         md += "Length \(Self.clock(now)) · \(partEnds.count) part\(partEnds.count == 1 ? "" : "s") saved\n\n"
-        if micOnly { md += micOnlyNote }
+        md += headerNote
         md += Self.render(lines, micOnly: micOnly)
         return md
     }
@@ -115,9 +125,33 @@ public struct MeetingTranscript: Sendable {
     public var micOnly: Bool { !lines.isEmpty && !lines.contains { $0.speaker == Self.them } }
     public static let room = "Room"
     static let roomNote = "_Mic only: no computer audio, so every voice is from the mic and labeled Room._\n\n"
-    /// Once the voices have been told apart (2026-11-26), the note says how far to trust the names.
-    static let voicesNote = "_Mic only: no computer audio, so every voice is from the mic. Voices are told apart by sound: Me is the voice that matches your dictations, the others are numbered in the order they first spoke. A name can be wrong, most often on short lines and when people talk over each other._\n\n"
-    var micOnlyNote: String { lines.contains { $0.voice != nil } ? Self.voicesNote : Self.roomNote }
+
+    /// The note under a file's heading. Once voices have been told apart and numbered, it says
+    /// who was heard where and how far to trust the names; that is all a reader needs to follow
+    /// "Speaker 2" through the page.
+    var headerNote: String { voicesNote ?? (micOnly ? Self.roomNote : "") }
+
+    var voicesNote: String? {
+        func heard(_ stream: String) -> [String] {
+            var out: [String] = []
+            for l in heardLines where l.speaker == stream {
+                if let v = l.voice, !out.contains(v) { out.append(v) }
+            }
+            // The reader's own voice first, then the others as they first spoke.
+            if let i = out.firstIndex(of: Self.me), i > 0 { out.insert(out.remove(at: i), at: 0) }
+            return out
+        }
+        let mic = heard(Self.me), call = heard(Self.them)
+        guard (mic + call).contains(where: { $0.hasPrefix("Speaker ") }) else { return nil }
+        var note = "_Voices are told apart by sound; the numbers follow the order people first spoke. "
+        if call.isEmpty {
+            note += "No computer audio, so everyone is on your mic: \(mic.joined(separator: ", ")). "
+        } else {
+            if !mic.isEmpty { note += "On your mic: \(mic.joined(separator: ", ")). " }
+            note += "On the computer's audio: \(call.joined(separator: ", ")). "
+        }
+        return note + "A name can be wrong, most often on short lines and when people talk over each other._\n\n"
+    }
 
     func linesIn(_ start: TimeInterval, _ end: TimeInterval) -> [Line] {
         lines.filter { $0.end > start && $0.start < end }
@@ -134,7 +168,7 @@ public struct MeetingTranscript: Sendable {
 
     static func render(_ lines: [Line], micOnly: Bool = false) -> String {
         let kept = dropEcho(lines).map { l in
-            micOnly && l.speaker == me ? Line(speaker: l.voice ?? room, start: l.start, end: l.end, text: l.text) : l
+            Line(speaker: l.voice ?? (micOnly && l.speaker == me ? room : l.speaker), start: l.start, end: l.end, text: l.text)
         }
         var out: [String] = []
         var current: (speaker: String, start: TimeInterval, end: TimeInterval, texts: [String])?

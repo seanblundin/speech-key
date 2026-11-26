@@ -1,69 +1,94 @@
 import Foundation
 import SpeechEngine
 
-/// Telling the voices in a mic-only meeting apart (Sean, 2026-11-26: "if I'm rolling a meeting in
-/// person and there's 3 people in person and zero computer audio"). The mic is recorded to a file
-/// while the meeting runs; at each snapshot and at the end the whole recording is split by voice
-/// (`SpeakerSplitter`), and each transcript line gets the name of the voice that overlaps it most:
-/// "Me" for the voice that matches the user's dictations, "Speaker 1", "Speaker 2"… for the rest.
+/// Telling the voices in a meeting apart, whatever kind it is (Sean, 2026-11-26: "many voices via
+/// computer audio, many via in person… sometimes I'm on a phone call and want a notetaker").
+///
+/// The transcript is written for a frontier model to read, and one of those can follow a raw
+/// transcript well; what it can't do is hear. So the one thing added is who is speaking. Both
+/// streams (the mic, and the computer's audio) are recorded to a file while the meeting runs. At
+/// each snapshot and at the end, each recording is split by voice (`SpeakerSplitter`), every line
+/// gets the voice that overlaps it most, and `VoiceLabels.names` names them all one way: "Me",
+/// "Them" when the call is a single voice, otherwise "Speaker 1", "Speaker 2"… in the order
+/// people first spoke. Putting real names on the numbers is left to whoever reads the file.
 enum MeetingVoices {
-    /// Shorter recordings are left as "Room": too little speech to tell voices apart.
+    /// Shorter recordings are left alone: too little speech to tell voices apart.
     static let minimumSeconds: TimeInterval = 20
 
     struct Result {
-        /// Mic line start time → name.
-        var names: [TimeInterval: String] = [:]
-        /// Name → that voice's fingerprint, to keep names steady at the next snapshot.
+        var names: [MeetingTranscript.LineKey: String] = [:]
+        /// Name → that voice's fingerprint, to keep numbers steady at the next snapshot.
         var prints: [String: [Float]] = [:]
+        /// The streams that were split ("Me", "Them").
+        var streams: Set<String> = []
         var seconds: TimeInterval = 0
     }
 
-    /// Names for the mic lines of `transcript`, from the recording at `tape`.
-    static func name(_ transcript: MeetingTranscript, tape: URL, previous: [String: [Float]]) async throws -> Result {
+    /// Names for the lines of `transcript`, from the recording of each stream (`tapes`: "Me" → the
+    /// mic's file, "Them" → the computer audio's).
+    static func name(_ transcript: MeetingTranscript, tapes: [String: URL], previous: [String: [Float]]) async throws -> Result {
         let started = Date()
-        let split = try await SpeakerSplitter.shared.split(file: tape)
-        let mine = await VoicePrint.mine()
-        let micLines = transcript.lines.filter { $0.speaker == MeetingTranscript.me }
-        let voices = VoiceLabels.assign(lines: micLines.map { ($0.start, $0.end) },
-                                        turns: split.turns.map { ($0.voice, $0.start, $0.end) })
-        var order: [String] = []
-        for case let v? in voices where !order.contains(v) { order.append(v) }
-        let names = VoiceLabels.names(order: order, prints: split.prints, mine: mine, previous: previous)
         var out = Result()
-        for (line, voice) in zip(micLines, voices) {
-            if let voice, let name = names[voice] { out.names[line.start] = name }
+        // Each line's voice, as "<stream>/<voice>", and each voice's fingerprint.
+        var voiceOf: [MeetingTranscript.LineKey: String] = [:]
+        var prints: [String: [Float]] = [:]
+        // Echoes of the call picked up by the mic never reach the page, so they don't get named.
+        let heard = transcript.heardLines
+        for (stream, tape) in tapes.sorted(by: { $0.key < $1.key }) {
+            let lines = heard.filter { $0.speaker == stream }
+            guard !lines.isEmpty else { continue }
+            let split = try await SpeakerSplitter.shared.split(file: tape)
+            out.streams.insert(stream)
+            let voices = VoiceLabels.assign(lines: lines.map { ($0.start, $0.end) }, turns: split.turns.map { ($0.voice, $0.start, $0.end) })
+            for (line, voice) in zip(lines, voices) {
+                guard let voice else { continue }
+                voiceOf[.init(speaker: stream, start: line.start)] = stream + "/" + voice
+            }
+            for (voice, print) in split.prints { prints[stream + "/" + voice] = print }
         }
-        for (voice, name) in names { if let p = split.prints[voice] { out.prints[name] = p } }
+        // In the order they first spoke, across both streams.
+        var order: [String] = []
+        for line in heard {
+            if let id = voiceOf[.init(speaker: line.speaker, start: line.start)], !order.contains(id) { order.append(id) }
+        }
+        let voices = order.map { VoiceLabels.Voice(id: $0, print: prints[$0], onMic: $0.hasPrefix(MeetingTranscript.me + "/")) }
+        let mine = voices.contains(where: \.onMic) ? await VoicePrint.mine() : nil
+        let names = VoiceLabels.names(voices: voices, mine: mine, previous: previous)
+        for (key, id) in voiceOf { out.names[key] = names[id] }
+        for (id, name) in names { if let p = prints[id] { out.prints[name] = p } }
         out.seconds = Date().timeIntervalSince(started)
         return out
     }
 
-    /// Keeps the mic recordings of the three newest meetings when recordings are being kept
+    /// Keeps the recordings of the three newest meetings when recordings are being kept
     /// (`keepAudio`), for checking how well voices are told apart; otherwise removes any left behind.
-    static func pruneTapes(in root: URL, except live: URL? = nil) {
+    static func pruneTapes(in root: URL) {
         let fm = FileManager.default
         guard let folders = try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else { return }
-        let tapes = folders.map { $0.appendingPathComponent(MicTape.name) }
-            .filter { fm.fileExists(atPath: $0.path) && $0.deletingLastPathComponent().path != live?.path }
-            .sorted { $0.path > $1.path }       // folder names start with the date, so newest first
+        // Folder names start with the date, so newest first.
+        let withTapes = folders.filter { f in StreamTape.names.contains { fm.fileExists(atPath: f.appendingPathComponent($0).path) } }
+            .sorted { $0.path > $1.path }
         let keep = AudioKeep.limit > 0 ? 3 : 0
-        for tape in tapes.dropFirst(keep) { try? fm.removeItem(at: tape) }
+        for folder in withTapes.dropFirst(keep) {
+            for name in StreamTape.names { try? fm.removeItem(at: folder.appendingPathComponent(name)) }
+        }
     }
 }
 
-/// The mic's side of a meeting as a 16 kHz mono WAV, written as the meeting runs. Its clock is the
-/// meeting's clock (gaps are padded with silence before they get here), so voice turns found in it
-/// line up with transcript lines. About 115 MB an hour; removed when the meeting ends unless
-/// recordings are being kept.
-final class MicTape: @unchecked Sendable {
-    static let name = ".mic.wav"
+/// One stream of a meeting (the mic, or the computer's audio) as a 16 kHz mono WAV, written as
+/// the meeting runs. Its clock is the meeting's clock (gaps are padded with silence before they
+/// get here), so voice turns found in it line up with transcript lines. About 115 MB an hour;
+/// removed when the meeting ends unless recordings are being kept.
+final class StreamTape: @unchecked Sendable {
+    static let mic = ".mic.wav", call = ".call.wav"
+    static let names = [mic, call]
     let url: URL
     private let queue = DispatchQueue(label: "speechkey.mictape")
     private var handle: FileHandle?
     private var frames = 0
 
-    init?(folder: URL) {
-        url = folder.appendingPathComponent(Self.name)
+    init?(folder: URL, name: String) {
+        url = folder.appendingPathComponent(name)
         guard FileManager.default.createFile(atPath: url.path, contents: Self.header(frames: 0)),
               let h = try? FileHandle(forWritingTo: url) else { return nil }
         _ = try? h.seekToEnd()
@@ -115,7 +140,7 @@ final class MicTape: @unchecked Sendable {
     }
 }
 
-/// The user's own voice as 256 numbers, so a mic-only meeting can say which voice is "Me". Made
+/// The user's own voice as 256 numbers, so a meeting can say which voice on the mic is "Me". Made
 /// from kept dictation recordings (the `keepAudio` setting), since every dictation is the user
 /// talking; without kept recordings there is no fingerprint and every voice gets a number.
 /// Stored in `voiceprint.json` next to the logs, remade weekly. Never leaves the Mac.

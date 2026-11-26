@@ -21,8 +21,8 @@ final class MeetingSession {
     private var streams: [Stream] = []
     private(set) var lastSpeechAt = Date()
     private var statsTimer: Timer?
-    /// The mic recorded to a file, so the voices in a mic-only meeting can be told apart.
-    private var tape: MicTape?
+    /// Both streams recorded to files, so the voices in each can be told apart ("Me" = mic, "Them" = computer audio).
+    private var tapes: [String: StreamTape] = [:]
     /// Names given to voices so far in this meeting, with each voice's fingerprint.
     private var voicePrints: [String: [Float]] = [:]
     private var naming: Task<Void, Never>?
@@ -111,15 +111,17 @@ final class MeetingSession {
         let me = makeStream(MeetingTranscript.me)
         let meStats = streams.last!.stats
         let meClock = StreamClock(start: startedAt)
-        let tape = MicTape(folder: folder)
-        self.tape = tape
-        mic.onSamples = { let s = meClock.align($0); meStats.add(s); tape?.append(s); me.yield(s) }
+        let micTape = StreamTape(folder: folder, name: StreamTape.mic)
+        tapes[MeetingTranscript.me] = micTape
+        mic.onSamples = { let s = meClock.align($0); meStats.add(s); micTape?.append(s); me.yield(s) }
         do { try mic.start() } catch { UtterLog.write("mic start failed: \(error)"); throw error }
         UtterLog.write("mic started: \(mic.formatDescription)")
         let them = makeStream(MeetingTranscript.them)
         let themStats = streams.last!.stats
         let themClock = StreamClock(start: startedAt)
-        tap.onSamples = { let s = themClock.align($0); themStats.add(s); them.yield(s) }
+        let callTape = StreamTape(folder: folder, name: StreamTape.call)
+        tapes[MeetingTranscript.them] = callTape
+        tap.onSamples = { let s = themClock.align($0); themStats.add(s); callTape?.append(s); them.yield(s) }
         do { try tap.start() } catch {
             UtterLog.write("system audio tap failed: \(error.localizedDescription)")
             throw error
@@ -218,26 +220,30 @@ final class MeetingSession {
         return (last.number, last.end)
     }
 
-    /// In a mic-only meeting, tells the voices apart and rewrites the saved files with names in
-    /// place of "Room". Runs after the files are saved, so a snapshot never waits for it (a
-    /// one-hour meeting takes about 15 s on an M2 Air); the names land in the same files moments later.
+    /// Tells the voices apart and rewrites the saved files with their names. Runs after the files
+    /// are saved, so a snapshot never waits for it (a one-hour meeting takes about 15 s per stream
+    /// on an M2 Air); the names land in the same files moments later.
     private func nameVoices(last: Bool) {
-        guard let tape else { return }
+        guard !tapes.isEmpty else { return }
+        let tapes = self.tapes
         let earlier = naming
         naming = Task { [weak self] in
             await earlier?.value
             guard let self else { return }
             defer {
                 if last {
-                    tape.close(keep: AudioKeep.limit > 0)
-                    self.tape = nil
+                    for tape in tapes.values { tape.close(keep: AudioKeep.limit > 0) }
+                    self.tapes = [:]
                     MeetingVoices.pruneTapes(in: self.folder.deletingLastPathComponent())
                 }
             }
-            guard self.transcript.micOnly, tape.seal() >= MeetingVoices.minimumSeconds else { return }
+            // Only streams with enough on tape; a call that never made a sound has nothing to split.
+            let ready = tapes.filter { $0.value.seal() >= MeetingVoices.minimumSeconds }.mapValues(\.url)
+            guard !ready.isEmpty else { return }
             do {
-                let result = try await MeetingVoices.name(self.transcript, tape: tape.url, previous: self.voicePrints)
-                self.transcript.setVoices(result.names)
+                let result = try await MeetingVoices.name(self.transcript, tapes: ready, previous: self.voicePrints)
+                guard !result.streams.isEmpty else { return }
+                self.transcript.setVoices(result.names, on: result.streams)
                 self.voicePrints.merge(result.prints) { _, new in new }
                 self.rewriteSavedFiles()
                 UtterLog.write(String(format: "voices told apart in %.1fs: %@", result.seconds,

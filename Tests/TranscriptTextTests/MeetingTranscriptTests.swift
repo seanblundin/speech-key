@@ -102,21 +102,45 @@ struct MeetingTranscriptTests {
     }
 
     @Test func voicesGetNamesInAMicOnlyMeeting() {
+        typealias Key = MeetingTranscript.LineKey
         var t = MeetingTranscript(startedAt: Date(timeIntervalSince1970: 0))
         t.add(.init(speaker: MeetingTranscript.me, start: 1, end: 4, text: "Let's start with the budget."))
         t.add(.init(speaker: MeetingTranscript.me, start: 5, end: 8, text: "I have the numbers here."))
         t.add(.init(speaker: MeetingTranscript.me, start: 9, end: 12, text: "Great, go ahead."))
         _ = t.makePart(endingAt: 15)
         #expect(t.fullMarkdown(now: 15).contains("labeled Room"))
-        t.setVoices([1: "Me", 5: "Speaker 1", 9: "Me"])
+        t.setVoices([Key(speaker: "Me", start: 1): "Me", Key(speaker: "Me", start: 5): "Speaker 1", Key(speaker: "Me", start: 9): "Me"], on: ["Me"])
         let md = t.fullMarkdown(now: 15)
         #expect(md.contains("**[0:01] Me:** Let's start with the budget."))
         #expect(md.contains("**[0:05] Speaker 1:** I have the numbers here."))
         #expect(md.contains("**[0:09] Me:** Great, go ahead."))
-        #expect(md.contains("told apart by sound") && !md.contains("labeled Room"))
+        #expect(md.contains("No computer audio, so everyone is on your mic: Me, Speaker 1.") && !md.contains("labeled Room"))
         // A saved part can be written again with the names in it.
         #expect(t.part(1)?.markdown.contains("Speaker 1:") == true)
         #expect(t.part(2) == nil)
+        // A later pass that no longer names a line takes its name away.
+        t.setVoices([:], on: ["Me"])
+        #expect(t.fullMarkdown(now: 15).contains("labeled Room"))
+    }
+
+    @Test func aCallWithSeveralPeopleSaysWhoIsWhere() {
+        typealias Key = MeetingTranscript.LineKey
+        var t = MeetingTranscript(startedAt: Date(timeIntervalSince1970: 0))
+        t.add(.init(speaker: MeetingTranscript.them, start: 1, end: 4, text: "Thanks for joining, everyone."))
+        t.add(.init(speaker: MeetingTranscript.me, start: 5, end: 8, text: "Happy to be here."))
+        t.add(.init(speaker: MeetingTranscript.them, start: 9, end: 12, text: "Shall we start with pricing?"))
+        t.add(.init(speaker: MeetingTranscript.me, start: 13, end: 16, text: "I can take notes."))
+        // A plain one-to-one call needs no note at all.
+        t.setVoices([Key(speaker: "Them", start: 1): "Them", Key(speaker: "Them", start: 9): "Them",
+                     Key(speaker: "Me", start: 5): "Me", Key(speaker: "Me", start: 13): "Me"], on: ["Me", "Them"])
+        #expect(!t.fullMarkdown(now: 20).contains("told apart"))
+        // Two people on the call, and a colleague next to me.
+        t.setVoices([Key(speaker: "Them", start: 1): "Speaker 1", Key(speaker: "Them", start: 9): "Speaker 2",
+                     Key(speaker: "Me", start: 5): "Me", Key(speaker: "Me", start: 13): "Speaker 3"], on: ["Me", "Them"])
+        let md = t.fullMarkdown(now: 20)
+        #expect(md.contains("On your mic: Me, Speaker 3. On the computer's audio: Speaker 1, Speaker 2."))
+        #expect(md.contains("**[0:01] Speaker 1:** Thanks for joining, everyone."))
+        #expect(md.contains("**[0:13] Speaker 3:** I can take notes."))
     }
 
     @Test func linesGoToTheVoiceThatOverlapsMost() {
@@ -125,20 +149,30 @@ struct MeetingTranscriptTests {
         #expect(got == ["A", "B", "B", nil])     // third: nobody during it, B ended a second before; fourth: too far from anyone
     }
 
-    @Test func meIsOnlyAClearMatchAndNumbersStaySteady() {
-        let mine: [Float] = [1, 0, 0], other: [Float] = [0, 1, 0], third: [Float] = [0, 0, 1]
-        let prints = ["S1": other, "S2": VoiceLabels.unit([0.9, 0.1, 0]), "S3": third]
-        var names = VoiceLabels.names(order: ["S1", "S2", "S3"], prints: prints, mine: mine)
-        #expect(names == ["S1": "Speaker 1", "S2": "Me", "S3": "Speaker 2"])
-        // Two voices that both sound like the user: nobody is called Me.
-        names = VoiceLabels.names(order: ["S1", "S2"], prints: ["S1": VoiceLabels.unit([0.9, 0.1, 0]), "S2": VoiceLabels.unit([0.85, 0.2, 0])], mine: mine)
-        #expect(names == ["S1": "Speaker 1", "S2": "Speaker 2"])
-        // No fingerprint for the user: everyone is numbered.
-        #expect(VoiceLabels.names(order: ["S1"], prints: prints, mine: nil) == ["S1": "Speaker 1"])
-        // At the next snapshot the voices come back in another order; each keeps its name.
-        let before = ["Speaker 1": other, "Speaker 2": third, "Me": mine]
-        names = VoiceLabels.names(order: ["X", "Y", "Z", "W"], prints: ["X": third, "Y": mine, "Z": other, "W": VoiceLabels.unit([1, 1, 1])],
-                                  mine: mine, previous: before)
-        #expect(names == ["X": "Speaker 2", "Y": "Me", "Z": "Speaker 1", "W": "Speaker 3"])
+    @Test func everyKindOfMeetingIsNamedOneWay() {
+        typealias V = VoiceLabels.Voice
+        let mine: [Float] = [1, 0, 0, 0], a: [Float] = [0, 1, 0, 0], b: [Float] = [0, 0, 1, 0], c: [Float] = [0, 0, 0, 1]
+        let likeMe = VoiceLabels.unit([0.9, 0.1, 0, 0])
+        // In person, three people on one mic.
+        var names = VoiceLabels.names(voices: [V(id: "m1", print: a, onMic: true), V(id: "m2", print: likeMe, onMic: true), V(id: "m3", print: b, onMic: true)], mine: mine)
+        #expect(names == ["m1": "Speaker 1", "m2": "Me", "m3": "Speaker 2"])
+        // Two mic voices that both sound like the user: nobody is called Me.
+        names = VoiceLabels.names(voices: [V(id: "m1", print: likeMe, onMic: true), V(id: "m2", print: VoiceLabels.unit([0.85, 0.2, 0, 0]), onMic: true)], mine: mine)
+        #expect(names == ["m1": "Speaker 1", "m2": "Speaker 2"])
+        // A one-to-one call, and no fingerprint for the user: plain Me and Them.
+        names = VoiceLabels.names(voices: [V(id: "c1", print: a, onMic: false), V(id: "m1", print: b, onMic: true)], mine: nil)
+        #expect(names == ["c1": "Them", "m1": "Me"])
+        // A call with three remote people; the user alone at the desk. Me is never looked for on the call.
+        names = VoiceLabels.names(voices: [V(id: "c1", print: a, onMic: false), V(id: "m1", print: likeMe, onMic: true),
+                                           V(id: "c2", print: likeMe, onMic: false), V(id: "c3", print: c, onMic: false)], mine: mine)
+        #expect(names == ["c1": "Speaker 1", "m1": "Me", "c2": "Speaker 2", "c3": "Speaker 3"])
+        // The mic also picks up a remote voice through the speakers: one person, one name.
+        names = VoiceLabels.names(voices: [V(id: "c1", print: a, onMic: false), V(id: "c2", print: b, onMic: false),
+                                           V(id: "m1", print: likeMe, onMic: true), V(id: "m2", print: VoiceLabels.unit([0, 0.1, 0.95, 0]), onMic: true)], mine: mine)
+        #expect(names == ["c1": "Speaker 1", "c2": "Speaker 2", "m1": "Me", "m2": "Speaker 2"])
+        // At the next snapshot the voices come back in another order, plus a newcomer; numbers hold.
+        names = VoiceLabels.names(voices: [V(id: "x", print: b, onMic: false), V(id: "y", print: c, onMic: false), V(id: "z", print: a, onMic: false)],
+                                  mine: mine, previous: ["Speaker 1": a, "Speaker 2": b, "Me": mine])
+        #expect(names == ["x": "Speaker 2", "y": "Speaker 3", "z": "Speaker 1"])
     }
 }
