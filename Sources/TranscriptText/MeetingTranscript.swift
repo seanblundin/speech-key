@@ -129,7 +129,13 @@ public struct MeetingTranscript: Sendable {
     /// The note under a file's heading. Once voices have been told apart and numbered, it says
     /// who was heard where and how far to trust the names; that is all a reader needs to follow
     /// "Speaker 2" through the page.
-    var headerNote: String { voicesNote ?? (micOnly ? Self.roomNote : "") }
+    var headerNote: String {
+        if let voicesNote { return voicesNote }
+        guard micOnly else { return "" }
+        // The voices couldn't be told apart, but the user's own lines could be picked out.
+        return lines.contains { $0.voice == Self.me } ? Self.mineOnlyNote : Self.roomNote
+    }
+    static let mineOnlyNote = "_Mic only: no computer audio, so every voice is from the mic. Lines that clearly match your voice are marked Me; the other voices couldn't be told apart and are labeled Room (some short lines of yours may be among them)._\n\n"
 
     var voicesNote: String? {
         func heard(_ stream: String) -> [String] {

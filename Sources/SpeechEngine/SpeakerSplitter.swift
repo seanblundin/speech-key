@@ -43,6 +43,19 @@ public actor SpeakerSplitter {
         return m
     }
 
+    private var printer: DiarizerManager?
+
+    /// The fingerprint of whoever is speaking in a short stretch of 16 kHz mono audio (up to 10 s),
+    /// assuming it is one person.
+    public func fingerprint(_ samples: [Float]) async throws -> [Float] {
+        if printer == nil {
+            let m = DiarizerManager()
+            m.initialize(models: try await DiarizerModels.downloadIfNeeded())
+            printer = m
+        }
+        return try printer!.extractSpeakerEmbedding(from: Array(samples.prefix(160_000)))
+    }
+
     /// Splits an audio file (any format AVFoundation reads).
     public func split(file: URL) async throws -> VoiceSplit {
         Self.result(try await ready().process(file))

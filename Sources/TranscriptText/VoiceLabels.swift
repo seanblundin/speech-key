@@ -35,6 +35,25 @@ public enum VoiceLabels {
     /// plain label. A wrong name misleads whoever reads the transcript; no name doesn't.
     public static let unheardLimit = 0.2
 
+    /// The fallback when the voices in a room can't be told apart: which lines are clearly the
+    /// user's own. `scores` is each line's own fingerprint against the user's voice.
+    ///
+    /// From Sean's two family recordings (2026-11-26, people talking from across a room): his
+    /// longer lines scored 0.58 to 0.66 and everyone else's 0.31 or less, with his short lines and a
+    /// brother's in between. So a line of a second or more at 0.5 is his, and a line right next to
+    /// one of those (within a second) at 0.35 is too. Nothing else is claimed.
+    public static func mineByLine(_ lines: [(start: TimeInterval, end: TimeInterval, score: Float)]) -> [Bool] {
+        let sure = lines.map { $0.end - $0.start >= 1.0 && $0.score >= mineAtLeast }
+        var mine = sure
+        for i in lines.indices where !sure[i] && lines[i].score >= mineNextTo {
+            let after = i > 0 && sure[i - 1] && lines[i].start - lines[i - 1].end <= 1.0
+            let before = i + 1 < lines.count && sure[i + 1] && lines[i + 1].start - lines[i].end <= 1.0
+            if after || before { mine[i] = true }
+        }
+        return mine
+    }
+    public static let mineNextTo: Float = 0.35
+
     /// One voice found in one of a meeting's two streams.
     public struct Voice: Sendable {
         public let id: String

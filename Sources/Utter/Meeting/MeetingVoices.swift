@@ -46,7 +46,27 @@ enum MeetingVoices {
             let words = lines.map { $0.text.split(separator: " ").count }
             let missed = zip(words, voices).filter { $0.1 == nil }.reduce(0) { $0 + $1.0 }
             let share = Double(missed) / Double(max(1, words.reduce(0, +)))
-            guard share <= VoiceLabels.unheardLimit else { out.unheard[stream] = share; continue }
+            guard share <= VoiceLabels.unheardLimit else {
+                out.unheard[stream] = share
+                // The room's voices can't be told apart, but the user's own lines often still can:
+                // fingerprint each line by itself and compare it with the user's voice.
+                if stream == MeetingTranscript.me, transcript.micOnly, let mine = await VoicePrint.mineByLine() {
+                    var scored: [(start: TimeInterval, end: TimeInterval, score: Float)] = []
+                    for line in lines {
+                        // At least 1.2 s of sound, centred on the line.
+                        let pad = max(0, (1.2 - (line.end - line.start)) / 2)
+                        let sound = StreamTape.samples(of: tape, from: line.start - pad, to: line.end + pad)
+                        let print = sound.count >= 8_000 ? try? await SpeakerSplitter.shared.fingerprint(sound) : nil
+                        scored.append((line.start, line.end, print.map { VoiceLabels.similarity($0, mine) } ?? 0))
+                    }
+                    let isMine = VoiceLabels.mineByLine(scored)
+                    if isMine.contains(true) {
+                        for (line, mine) in zip(lines, isMine) where mine { out.names[.init(speaker: stream, start: line.start)] = VoiceLabels.me }
+                        out.streams.insert(stream)
+                    }
+                }
+                continue
+            }
             out.streams.insert(stream)
             for (line, voice) in zip(lines, voices) {
                 guard let voice else { continue }
@@ -103,6 +123,16 @@ final class StreamTape: @unchecked Sendable {
         handle = h
     }
 
+    /// A stretch of a tape (seconds from its start) as samples, read straight from the file.
+    static func samples(of url: URL, from: TimeInterval, to: TimeInterval) -> [Float] {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return [] }
+        defer { try? handle.close() }
+        let first = max(0, Int(from * 16_000)), last = max(first, Int(to * 16_000))
+        guard (try? handle.seek(toOffset: UInt64(44 + first * 2))) != nil,
+              let data = try? handle.read(upToCount: (last - first) * 2) else { return [] }
+        return data.withUnsafeBytes { raw in raw.bindMemory(to: Int16.self).map { Float(Int16(littleEndian: $0)) / 32768 } }
+    }
+
     func append(_ samples: [Float]) {
         queue.async { [self] in
             guard let handle else { return }
@@ -153,7 +183,12 @@ final class StreamTape: @unchecked Sendable {
 /// talking; without kept recordings there is no fingerprint and every voice gets a number.
 /// Stored in `voiceprint.json` next to the logs, remade weekly. Never leaves the Mac.
 enum VoicePrint {
-    struct Saved: Codable { let print: [Float]; let made: Date; let seconds: Double }
+    struct Saved: Codable {
+        let print: [Float]; let made: Date; let seconds: Double
+        /// The same voice from the fingerprinter used on single lines (`SpeakerSplitter.fingerprint`);
+        /// its numbers aren't comparable with `print`.
+        var line: [Float]? = nil
+    }
     static let file = DictationLog.directory.appendingPathComponent("voiceprint.json")
     private static let maxAge: TimeInterval = 7 * 86_400
 
@@ -161,6 +196,30 @@ enum VoicePrint {
         let saved = (try? Data(contentsOf: file)).flatMap { try? JSONDecoder().decode(Saved.self, from: $0) }
         if let saved, Date().timeIntervalSince(saved.made) < maxAge { return saved.print }
         return await remake() ?? saved?.print
+    }
+
+    /// The user's voice for comparing single lines against: the newest kept dictations, each
+    /// fingerprinted by itself, averaged. Saved next to the main fingerprint.
+    static func mineByLine() async -> [Float]? {
+        var saved = (try? Data(contentsOf: file)).flatMap { try? JSONDecoder().decode(Saved.self, from: $0) }
+        if let line = saved?.line, let made = saved?.made, Date().timeIntervalSince(made) < maxAge { return line }
+        guard let files = try? FileManager.default.contentsOfDirectory(at: AudioKeep.folder, includingPropertiesForKeys: nil) else { return saved?.line }
+        var sum = [Float](repeating: 0, count: 256)
+        var used = 0
+        for f in files.filter({ $0.pathExtension == "m4a" }).sorted(by: { $0.lastPathComponent > $1.lastPathComponent }) where used < 16 {
+            guard let clip = try? SpeechEngine.loadAudioFile(f), clip.count >= 4 * 16_000, clip.count <= 300 * 16_000,
+                  let p = try? await SpeakerSplitter.shared.fingerprint(Array(clip.dropFirst(8_000))), p.count == sum.count else { continue }
+            for i in sum.indices { sum[i] += p[i] }
+            used += 1
+        }
+        guard used >= 3 else { return saved?.line }
+        let line = VoiceLabels.unit(sum)
+        // Kept with the main fingerprint when there is one; this alone never stands in for it.
+        if saved != nil {
+            saved?.line = line
+            if let data = try? JSONEncoder().encode(saved) { try? data.write(to: file, options: .atomic) }
+        }
+        return line
     }
 
     /// About five minutes of the newest kept dictations, split by voice; the voice that did most of

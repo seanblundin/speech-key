@@ -35,7 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let i = args.firstIndex(of: name), i + 1 < args.count else { return nil }
             return args[i + 1]
         }
-        let testing = args.contains { $0.hasPrefix("--simulate") || $0 == "--render-pill" || $0 == "--test-meeting" || $0 == "--test-voices" || $0 == "--test-paste" || $0 == "--test-titles" || $0 == "--test-update-check" || $0 == "--give-codes" || $0 == "--verify-models" }
+        let testing = args.contains { $0.hasPrefix("--simulate") || $0 == "--render-pill" || $0 == "--test-meeting" || $0 == "--test-voices" || $0 == "--test-line-voices" || $0 == "--test-paste" || $0 == "--test-titles" || $0 == "--test-update-check" || $0 == "--give-codes" || $0 == "--verify-models" }
         if testing { controller.log.enabled = false }
         fnMonitor = FnKeyMonitor()
         setup = SetupWindowController()
@@ -152,6 +152,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     print(String(format: "%@  %@  %.1fs  title %d chars, summary %d chars", r == nil ? "FAILED" : "ok    ",
                                  m.folder.lastPathComponent, Date().timeIntervalSince(t0), r?.title.count ?? 0, r?.summary.count ?? 0))
                 }
+                NSApp.terminate(nil)
+            }
+            return
+        }
+        if let folder = arg("--test-line-voices") {
+            // Experiment: fingerprint each transcript line of a kept meeting on its own and compare it
+            // with the user's voice, instead of asking a model to find the turns.
+            Task {
+                let dir = URL(fileURLWithPath: folder)
+                guard let tape = try? SpeechEngine.loadAudioFile(dir.appendingPathComponent(StreamTape.mic)),
+                      let log = try? String(contentsOf: dir.appendingPathComponent(MeetingRecovery.doneName), encoding: .utf8) else { print("can't read \(folder)"); NSApp.terminate(nil); return }
+                // The user's voice, from kept dictations, with the same fingerprinter.
+                var mine = [Float](repeating: 0, count: 256)
+                var used = 0
+                let kept = ((try? FileManager.default.contentsOfDirectory(at: AudioKeep.folder, includingPropertiesForKeys: nil)) ?? [])
+                    .filter { $0.pathExtension == "m4a" }.sorted { $0.lastPathComponent > $1.lastPathComponent }
+                for f in kept where used < 16 {
+                    guard let clip = try? SpeechEngine.loadAudioFile(f), clip.count >= 4 * 16_000, clip.count <= 300 * 16_000,
+                          let p = try? await SpeakerSplitter.shared.fingerprint(Array(clip.dropFirst(8_000))) else { continue }
+                    for i in mine.indices { mine[i] += p[i] }
+                    used += 1
+                }
+                mine = VoiceLabels.unit(mine)
+                print("voiceprint from \(used) dictations")
+                var prints: [(start: Double, end: Double, text: String, print: [Float])] = []
+                for line in log.split(separator: "\n") {
+                    guard let o = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+                          let text = o["text"] as? String, let start = o["start"] as? Double, let end = o["end"] as? Double else { continue }
+                    // At least 1.2 s of audio, centred on the line.
+                    let pad = max(0, (1.2 - (end - start)) / 2)
+                    let a = max(0, Int((start - pad) * 16_000)), b = min(tape.count, Int((end + pad) * 16_000))
+                    guard b > a, let p = try? await SpeakerSplitter.shared.fingerprint(Array(tape[a..<b])) else { continue }
+                    prints.append((start, end, text, p))
+                }
+                for (i, l) in prints.enumerated() {
+                    let prev = i > 0 ? VoiceLabels.similarity(l.print, prints[i - 1].print) : 0
+                    print(String(format: "%6.1f %4.1fs  me %5.2f  prev %5.2f  %@", l.start, l.end - l.start, VoiceLabels.similarity(l.print, mine), prev, String(l.text.prefix(80))))
+                }
+                if let out = arg("--dump") {
+                    let rows = prints.map { ["start": $0.start, "end": $0.end, "text": $0.text, "print": $0.print] as [String: Any] }
+                    try? JSONSerialization.data(withJSONObject: ["mine": mine, "lines": rows]).write(to: URL(fileURLWithPath: out))
+                }
+                fflush(stdout)
                 NSApp.terminate(nil)
             }
             return
