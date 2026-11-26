@@ -2,7 +2,14 @@
 
 Hold **🌐 (fn)** and talk. Let go, and your words paste wherever your cursor is, with your names spelled right. Everything runs on your Mac: no account, no cloud, no audio saved.
 
-Download the signed app at **[speechkeyapp.com](https://speechkeyapp.com)**. It needs macOS 26 on Apple silicon. The speech model (about 0.5 GB) downloads on first launch.
+Download the signed app at **[speechkeyapp.com](https://speechkeyapp.com)**. The speech model (about 0.7 GB) downloads on first launch.
+
+### What it runs on
+
+- **Supported:** macOS 26 (Tahoe) or later, on a Mac with Apple silicon, with Apple Intelligence turned on (System Settings › Apple Intelligence & Siri). This is what Speech Key is built and tested on.
+- **Apple Intelligence** is Apple's on-device model. Speech Key uses it for the agent (hold ⇧ and the globe key), meeting titles and summaries, and glossary fixes that depend on context. With it turned off, dictation, the glossary and meeting transcripts still work, and Speech Key says what is missing.
+- **Not supported:** macOS 14 and 15. The app opens there and dictation may work, but those versions have no Apple Intelligence, nothing is tested on them, and problems on them won't be fixed. Intel Macs can't run it at all.
+- There is no substitute model to download for Macs without Apple Intelligence. One was considered and tested (November 2026): the small open models that fit were slower and no more accurate at this job.
 
 ## What it does
 
