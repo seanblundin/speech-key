@@ -217,7 +217,7 @@ private struct HistoryRow: View {
 }
 
 /// One dictation. Click copies it; double-click a word to fix it. When the cleanup changed
-/// anything, "Raw" flips the row to the words exactly as heard (what was cut is tinted), and a
+/// anything, "View Raw" flips the row to the words exactly as heard (what was cut is tinted), and a
 /// click then copies those instead (Sean, 2026-11-18: see it and copy it, in the rare moment the
 /// raw words are the useful ones).
 private struct DictationRow: View {
@@ -319,7 +319,7 @@ private struct RawToggle: View {
 
     var body: some View {
         Button { on.toggle() } label: {
-            Text(on ? "Cleaned" : "Raw")
+            Text(on ? "View Cleaned" : "View Raw")
                 .font(.system(size: 10.5, weight: .medium))
                 .foregroundStyle(on ? Color(nsColor: .systemOrange) : Color.secondary)
                 .padding(.horizontal, 7).frame(height: 16)

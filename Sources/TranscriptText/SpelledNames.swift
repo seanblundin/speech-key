@@ -1,7 +1,8 @@
 import Foundation
 
-/// Names learned from an ordinary dictation: say a name, then spell it right away
-/// ("Sara S-A-R-A-H"), and the spelling is what to write from now on.
+/// Names learned from an ordinary dictation: say a name and spell it in the same sentence
+/// ("Sara S-A-R-A-H", or "my friend Sara is coming, S-A-R-A-H"), and the spelling is what to
+/// write from now on.
 ///
 /// One narrow rule on purpose. Sentences that talk about a mistake ("you wrote X instead of Y",
 /// "mistranscribed as…") are left alone: telling right from wrong there takes understanding,
@@ -20,8 +21,6 @@ public enum SpelledNames {
     static let aboutAMistake = try! NSRegularExpression(
         pattern: #"\b(\w*transcri\w*|misspell\w*|misheard|instead of|rather than|typo|wrote|written|heard|wrong|not|should be|supposed to be)\b"#,
         options: [.caseInsensitive])
-    static let skipWords: Set<String> = ["uh", "um", "like", "spelled", "spelt", "that's", "thats", "as", "in", "so", "it's", "its", "is"]
-
     public static func lessons(in text: String) -> [Lesson] {
         let ns = text as NSString
         var out: [Lesson] = []
@@ -40,13 +39,19 @@ public enum SpelledNames {
             let sentence = head + " " + tail
             if aboutAMistake.firstMatch(in: sentence, range: NSRange(location: 0, length: (sentence as NSString).length)) != nil { continue }
 
-            // The name as it was heard: the nearest of the few words just before the spelling.
-            let words = head.split(whereSeparator: { $0.isWhitespace })
-                .map { $0.trimmingCharacters(in: CharacterSet.punctuationCharacters) }
-                .filter { !$0.isEmpty && !skipWords.contains($0.lowercased()) }
-            let near = words.suffix(3)
-            if near.contains(where: { $0.caseInsensitiveCompare(write) == .orderedSame }) { continue }   // already right
-            guard let heard = near.reversed().first(where: { soundsLike($0, write) }) else { continue }
+            // The name as it was heard: the nearest word in the sentence that sounds like the spelling,
+            // looking back first ("My friend Anemonee is a good friend of mine, A-N-I-E-M-O-N-E",
+            // Sean's own test on 2026-11-26), then ahead.
+            func words(_ part: String) -> [String] {
+                part.split(whereSeparator: { $0.isWhitespace })
+                    .map { $0.trimmingCharacters(in: CharacterSet.punctuationCharacters) }
+                    .map { $0.hasSuffix("'s") || $0.hasSuffix("’s") ? String($0.dropLast(2)) : $0 }
+                    .filter { !$0.isEmpty }
+            }
+            let behind = words(head), ahead = words(tail)
+            if (behind + ahead).contains(where: { $0.caseInsensitiveCompare(write) == .orderedSame }) { continue }   // already right
+            guard let heard = behind.reversed().first(where: { soundsLike($0, write) }) ?? ahead.first(where: { soundsLike($0, write) })
+            else { continue }
             let lesson = Lesson(heard: heard, write: write)
             if !out.contains(lesson) { out.append(lesson) }
         }

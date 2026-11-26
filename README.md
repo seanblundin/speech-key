@@ -11,10 +11,10 @@ Download the signed app at **[speechkeyapp.com](https://speechkeyapp.com)**. It 
 - **Hold ⇧ fn:** talk to the agent instead of typing: "Jammy should be Jimmy", "remove Jimmy", "start a meeting", "take a snapshot", "undo that". Apple's on-device model reads the command, so it stays on the Mac.
 - **Esc** cancels.
 - **The menu-bar panel** has three tabs:
-  - **History:** every dictation, newest first. Click to copy, double-click to fix a word and teach the glossary. When the cleanup changed anything, **Raw** flips a row to the words exactly as heard (what was cut is tinted) and a click copies those instead.
+  - **History:** every dictation, newest first. Click to copy, double-click to fix a word and teach the glossary. When the cleanup changed anything, **View Raw** flips a row to the words exactly as heard (what was cut is tinted) and a click copies those instead.
   - **Meetings:** past meetings with titles and one-line summaries written on the Mac.
   - **Glossary:** an editable table of names Speech Key should spell your way.
-- **Say a name, then spell it** ("Sara S-A-R-A-H") and Speech Key writes it that way from then on. The pill says "Learned Sarah"; History has the undo.
+- **Say a name and spell it in the same sentence** ("Sara S-A-R-A-H", or "my friend Sara is coming, S-A-R-A-H") and Speech Key writes it that way from then on. The pill says "Learned Sarah"; History has the undo.
 - Don't want it pasted? Settings › "After you release 🌐" switches to **Copy** or **Save**.
 
 ### Meeting mode
@@ -29,7 +29,7 @@ Download the signed app at **[speechkeyapp.com](https://speechkeyapp.com)**. It 
 1. **Recognizer:** NVIDIA Parakeet TDT 0.6B (Moondream's "Ultra" fine-tune) on the Neural Engine, through [FluidAudio](https://github.com/FluidInference/FluidAudio). Long dictations are cut at pauses and transcribed while you talk, so letting go leaves only the last few seconds to do.
 2. **Name boosting:** a small second model (Parakeet CTC 110M) listens for glossary names. A suggested swap is kept only when it replaces something that isn't an ordinary word or a common first name.
 3. **Glossary:** a Markdown table (`Heard as | Write as | Notes`) in `~/Library/Application Support/SpeechKey/glossary.md`, or any file you pick in Settings. Plain rows are replaced as whole words. Rows whose notes set a condition ("only in book club talk") are decided by Apple's on-device model, and left alone when it's unsure.
-4. **Clean verbatim:** removes um and uh, words said twice in a row ("should should"), back-to-back repeats of a phrase, "like" when it's set off by commas, and the cut-off start of a word ("w white paper"). Rules only, no language model, so it adds no wait and does the same thing every time. Nothing is rewritten: every word left is one you said, in your order. Each cut is logged by kind.
+4. **Clean verbatim:** removes um and uh, small connecting words said twice in a row ("the the", "should should"; nouns, adjectives and verbs stay, since "final final take" is said on purpose), back-to-back repeats of a phrase, "like" when it's set off by commas, and the cut-off start of a word ("w white paper"). Rules only, no language model, so it adds no wait and does the same thing every time. Nothing is rewritten: every word left is one you said, in your order. Each cut is logged by kind.
 5. **Paste:** the clipboard holds a promise, so your old clipboard comes back only after the app has read the new text, and "Pasted" shows only when it did.
 
 Dictations are logged as text to `~/Library/Application Support/SpeechKey/` so the panel can show them. Audio is not kept unless you turn it on (below). Nothing is sent anywhere.

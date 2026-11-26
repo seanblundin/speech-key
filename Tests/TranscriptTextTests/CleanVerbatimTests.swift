@@ -96,12 +96,14 @@ struct CleanVerbatimTests {
         ] { check(keep, keep) }
     }
 
-    @Test func doubledWordsCollapseUnlessDoubledOnPurpose() {
-        check("You wanted to generate generate the image.", "You wanted to generate the image.")
+    @Test func onlySmallConnectingWordsCollapseWhenDoubled() {
         check("It should use as as a column.", "It should use as a column.")
-        check("Phases like needs needs needs work.", "Phases like needs work.")
         check("Hovering over things should should work.", "Hovering over things should work.")
+        check("Keep it in your your mind.", "Keep it in your mind.")
+        check("Well, let's let's go with the second one.", "Well, let's go with the second one.")
+        // Nouns, adjectives and verbs are doubled on purpose often enough that they always stay.
         for keep in [
+            "Create a master master folder anyway.", "Okay, final final take.", "You wanted to generate generate the image.",
             "That is very very important.", "No no, not that one.", "I think that that is fine.",
             "Blah blah blah, you get it.", "Wait, wait, hold on.", "It was one one two three.",
             "It's not not working.", "Really really good.", "He had had enough.",
@@ -114,8 +116,8 @@ struct CleanVerbatimTests {
     }
 
     @Test func everyCutIsRecordedWithItsKind() {
-        let r = CleanVerbatim.applyNoting("Um, so s within the the Q<unk>A folder we generate generate it.")
-        #expect(r.text == "So within the Q&A folder we generate it.")
+        let r = CleanVerbatim.applyNoting("Um, so s within the the Q<unk>A folder we should should make it.")
+        #expect(r.text == "So within the Q&A folder we should make it.")
         #expect(r.edits.map(\.kind) == [.glitch, .filler, .fragment, .repeat, .repeat])
         #expect(r.edits.first { $0.kind == .fragment }?.cut == "s")
         #expect(CleanVerbatim.applyNoting("Nothing to fix here.").edits.isEmpty)

@@ -4,7 +4,7 @@ import Foundation
 ///
 /// It removes only:
 /// - um, uh and similar sounds,
-/// - immediate stutters ("the the", "I, I think", "close close"),
+/// - immediate stutters of small connecting words ("the the", "I, I think", "should should"),
 /// - immediate restarts of a phrase ("the demo, the demo is" → "the demo is"),
 /// - "like" when it is set off by commas as a filler,
 /// - the cut-off start of a word that is then said in full ("w white paper", "s within"),
@@ -35,24 +35,21 @@ public enum CleanVerbatim {
 
     static let fillers: Set<String> = ["um", "umm", "ummm", "uh", "uhh", "uhhh", "uhm", "erm", "er", "hmm", "hmmm", "mm", "mmm"]
 
-    /// Small words that are never doubled on purpose, so they collapse even across a comma ("I, I think").
+    /// Small connecting words that are never doubled on purpose, so two in a row is a stutter
+    /// ("the the", "of of", "I, I think"). Nouns, adjectives and verbs are never on this list:
+    /// people double those on purpose ("the master master folder", "final final take"), and a rule
+    /// that collapsed every doubled word cut five of Sean's that way in its first week (2026-11-26).
+    /// Also not here: "that" and "had" ("that that", "had had"), "no", "very", "really", "do".
     static let stutterWords: Set<String> = [
         "the", "a", "an", "and", "i", "to", "of", "in", "it", "it's", "i'm", "we", "you", "but", "or",
         "for", "with", "on", "at", "my", "our", "this", "they", "he", "she", "if", "when", "so", "is", "are",
         "was", "be", "can", "just", "like", "what", "how", "why", "we're", "they're", "you're", "there",
-    ]
-
-    /// Words people do double on purpose ("very very", "no no", "that that", "blah blah"). Left alone.
-    static let doubledOnPurpose: Set<String> = [
-        "that", "had", "very", "really", "no", "yes", "yeah", "yep", "nope", "bye", "super", "way", "much", "many",
-        "long", "far", "big", "more", "never", "ever", "ha", "haha", "blah", "la", "na", "yada", "knock", "tap", "wait",
-        "go", "now", "okay", "ok", "right", "sure", "well", "please", "hey", "hi", "boom", "bang", "wow", "oh", "ooh",
-        "ah", "come", "look", "test", "testing", "check", "not", "do", "quick", "tiny", "little", "pretty", "real",
-        "damn", "new", "old", "good", "bad", "great", "nice", "cool", "sorry", "thank", "thanks", "tick", "click",
-        "beep", "ding", "hip", "same", "stop", "again", "out", "up", "down", "her", "his", "fine", "true", "false",
-        "left", "next", "back", "bla", "so-so", "win", "fast", "slow", "soon", "all", "day", "night", "side", "step",
-        "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "zero", "double", "hundred",
-        "thousand", "million", "billion", "dot", "dash", "slash", "star", "plus", "minus", "equals", "tab", "space",
+        "as", "your", "their", "its", "his", "her", "them", "me", "us", "him", "these", "those", "by", "from",
+        "into", "about", "than", "then", "which", "who", "where", "while", "because", "after", "before", "via", "per",
+        "should", "would", "could", "will", "have", "has", "does", "did", "were", "been", "am",
+        "let's", "that's", "there's", "here's", "he's", "she's", "i've", "we've", "you've", "i'd", "we'd", "i'll", "we'll",
+        "it'll", "don't", "doesn't", "didn't", "isn't", "aren't", "wasn't", "can't", "won't",
+        "each", "every", "some", "any", "also", "maybe", "once",
     ]
 
     /// Lone letters that are only ever the cut-off start of a word. Not c, k, n, q, x, y, z, and no
@@ -244,14 +241,8 @@ public enum CleanVerbatim {
         return tokens
     }
 
-    /// Whether one word said twice in a row is a stutter. Small function words always are; any
-    /// other word is unless people double it on purpose, it is a number or a lone letter, or
-    /// there is punctuation between the two ("wait, wait").
-    static func isStutter(_ first: Token) -> Bool {
-        if stutterWords.contains(first.key) { return true }
-        if doubledOnPurpose.contains(first.key) || first.hasDigit || first.core.count == 1 { return false }
-        return first.trail.isEmpty
-    }
+    /// Whether one word said twice in a row is a stutter: only the small connecting words are.
+    static func isStutter(_ first: Token) -> Bool { stutterWords.contains(first.key) }
 
     /// Fix spacing and capitals left behind by removals.
     static func tidy(_ s: String) -> String {

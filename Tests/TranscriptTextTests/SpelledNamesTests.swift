@@ -8,6 +8,13 @@ struct SpelledNamesTests {
                 == [.init(heard: "Sara", write: "Sarah")])
         #expect(SpelledNames.lessons(in: "I met Jamie, J-I-M-M-Y, at the event and he wants a demo.")
                 == [.init(heard: "Jamie", write: "Jimmy")])
+        // The spelling can come later in the sentence, with or without dashes (Sean's test, 2026-11-26).
+        #expect(SpelledNames.lessons(in: "My friend Anemonee is a good friend of mine, A-N-I-E-M-O-N-E.")
+                == [.init(heard: "Anemonee", write: "Aniemone")])
+        #expect(SpelledNames.lessons(in: "My friend Anemonee is a good friend of mine, A N I E M O N E.")
+                == [.init(heard: "Anemonee", write: "Aniemone")])
+        #expect(SpelledNames.lessons(in: "It's spelled A-N-I-E-M-O-N-E, and Anemonee's team starts Monday.")
+                == [.init(heard: "Anemonee", write: "Aniemone")])
         #expect(SpelledNames.lessons(in: "Ask Aidan, that's A I D E N, about the lease.")
                 == [.init(heard: "Aidan", write: "Aiden")])
     }
@@ -26,6 +33,7 @@ struct SpelledNamesTests {
     @Test func nothingIsLearnedWithoutAMisheardName() {
         for text in [
             "Send it to Sarah S-A-R-A-H today.",                 // already right
+            "My friend Anemone, A N E M O N E, is a good friend of mine.",   // already right
             "So I I I want to be able to put a name in the CRM.",       // a stutter
             "Make the header say sale S-A-L-E in big letters.",         // an everyday word
             "Talk to the T-H-E-O team about it.",                       // "the" is not a misheard Theo
@@ -42,7 +50,7 @@ struct SpelledNamesTests {
     }
 
     @Test func rawViewMarksWhatTheCleanupCut() {
-        let raw = "Um, so s within the the Q<unk>A folder we generate generate it."
+        let raw = "Um, so s within the the Q<unk>A folder we should should make it."
         let cleaned = CleanVerbatim.apply(raw)
         let cut = RawDiff.onlyInRaw(raw: raw, cleaned: cleaned).map { (raw as NSString).substring(with: $0) }
         #expect(cut.count == 5 && cut.contains("Um,") && cut.contains("s") && cut.contains("Q<unk>A"))
