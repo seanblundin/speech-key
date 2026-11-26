@@ -150,6 +150,10 @@ public struct MeetingTranscript: Sendable {
             if !mic.isEmpty { note += "On your mic: \(mic.joined(separator: ", ")). " }
             note += "On the computer's audio: \(call.joined(separator: ", ")). "
         }
+        // Lines where no voice was heard clearly keep the stream's plain label.
+        if heardLines.contains(where: { $0.speaker == Self.me && $0.voice == nil }) {
+            note += "\(micOnly ? Self.room : Self.me) with no number is a line from your mic whose voice wasn't clear enough to tell. "
+        }
         return note + "A name can be wrong, most often on short lines and when people talk over each other._\n\n"
     }
 

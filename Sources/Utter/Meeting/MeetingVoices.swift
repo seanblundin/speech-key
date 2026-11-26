@@ -19,8 +19,11 @@ enum MeetingVoices {
         var names: [MeetingTranscript.LineKey: String] = [:]
         /// Name → that voice's fingerprint, to keep numbers steady at the next snapshot.
         var prints: [String: [Float]] = [:]
-        /// The streams that were split ("Me", "Them").
+        /// The streams that were split and named ("Me", "Them").
         var streams: Set<String> = []
+        /// Streams left with their plain label because the splitter couldn't hear them well enough:
+        /// the share of words in lines where no voice was found.
+        var unheard: [String: Double] = [:]
         var seconds: TimeInterval = 0
     }
 
@@ -38,8 +41,13 @@ enum MeetingVoices {
             let lines = heard.filter { $0.speaker == stream }
             guard !lines.isEmpty else { continue }
             let split = try await SpeakerSplitter.shared.split(file: tape)
-            out.streams.insert(stream)
             let voices = VoiceLabels.assign(lines: lines.map { ($0.start, $0.end) }, turns: split.turns.map { ($0.voice, $0.start, $0.end) })
+            // Believe the split only if it accounts for nearly everything that was said.
+            let words = lines.map { $0.text.split(separator: " ").count }
+            let missed = zip(words, voices).filter { $0.1 == nil }.reduce(0) { $0 + $1.0 }
+            let share = Double(missed) / Double(max(1, words.reduce(0, +)))
+            guard share <= VoiceLabels.unheardLimit else { out.unheard[stream] = share; continue }
+            out.streams.insert(stream)
             for (line, voice) in zip(lines, voices) {
                 guard let voice else { continue }
                 voiceOf[.init(speaker: stream, start: line.start)] = stream + "/" + voice

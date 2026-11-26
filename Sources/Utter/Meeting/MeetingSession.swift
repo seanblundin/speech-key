@@ -227,9 +227,11 @@ final class MeetingSession {
         guard !tapes.isEmpty else { return }
         let tapes = self.tapes
         let earlier = naming
-        naming = Task { [weak self] in
+        // Holds on to the session on purpose: the controller lets go of it the moment the meeting
+        // ends, and the last naming pass has to outlive that (2026-11-26: with a weak reference the
+        // pass quietly never ran, and the recordings were left unfinished).
+        naming = Task { [self] in
             await earlier?.value
-            guard let self else { return }
             defer {
                 if last {
                     for tape in tapes.values { tape.close(keep: AudioKeep.limit > 0) }
@@ -242,6 +244,9 @@ final class MeetingSession {
             guard !ready.isEmpty else { return }
             do {
                 let result = try await MeetingVoices.name(self.transcript, tapes: ready, previous: self.voicePrints)
+                for (stream, share) in result.unheard {
+                    UtterLog.write(String(format: "voices: left %@ as it is; no voice found for %.0f%% of its words", stream, share * 100))
+                }
                 guard !result.streams.isEmpty else { return }
                 self.transcript.setVoices(result.names, on: result.streams)
                 self.voicePrints.merge(result.prints) { _, new in new }

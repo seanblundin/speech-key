@@ -195,6 +195,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 do {
                     let result = try await MeetingVoices.name(transcript, tapes: tapes.mapValues(\.url), previous: [:])
                     transcript.setVoices(result.names, on: result.streams)
+                    for (stream, share) in result.unheard { print(String(format: "left %@ as it is: no voice found for %.0f%% of its words", stream, share * 100)) }
                     print(String(format: "voices told apart in %.1fs for %.1f min: %@", result.seconds, length / 60,
                                  Set(result.names.values).sorted().joined(separator: ", ")))
                 } catch { print("couldn't tell voices apart: \(error)") }

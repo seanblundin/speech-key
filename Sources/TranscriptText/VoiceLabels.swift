@@ -13,7 +13,11 @@ public enum VoiceLabels {
     /// A voice keeps the name it had at the last snapshot when its fingerprint matches this well.
     public static let sameVoiceAtLeast: Float = 0.6
 
-    /// For each line, the voice that overlaps it longest; nil where nobody was found speaking.
+    /// For each line, the voice heard during most of it; nil where no voice was found speaking for
+    /// at least half the line. A line is never given to a voice that merely spoke nearby: in Sean's
+    /// first live test (2026-11-26, five family members answering in one or two words from across a
+    /// room) the splitter heard only the person next to the mic, and "nearest voice" put everyone's
+    /// answers in his mouth.
     public static func assign(lines: [(start: TimeInterval, end: TimeInterval)],
                               turns: [(voice: String, start: TimeInterval, end: TimeInterval)]) -> [String?] {
         lines.map { line in
@@ -21,12 +25,15 @@ public enum VoiceLabels {
             for t in turns where t.end > line.start && t.start < line.end {
                 overlap[t.voice, default: 0] += min(t.end, line.end) - max(t.start, line.start)
             }
-            if let best = overlap.max(by: { $0.value < $1.value }) { return best.key }
-            // Nobody found speaking during the line itself: the nearest voice within two seconds.
-            let near = turns.map { (voice: $0.voice, gap: max($0.start - line.end, line.start - $0.end)) }.min { $0.gap < $1.gap }
-            return near.flatMap { $0.gap <= 2 ? $0.voice : nil }
+            guard let best = overlap.max(by: { $0.value < $1.value }) else { return nil }
+            return best.value >= 0.5 * max(line.end - line.start, 0.01) ? best.key : nil
         }
     }
+
+    /// If more than this share of a stream's words fall in lines where no voice was found, the
+    /// splitter isn't hearing that recording well enough to be believed, and the stream keeps its
+    /// plain label. A wrong name misleads whoever reads the transcript; no name doesn't.
+    public static let unheardLimit = 0.2
 
     /// One voice found in one of a meeting's two streams.
     public struct Voice: Sendable {

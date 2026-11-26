@@ -143,10 +143,11 @@ struct MeetingTranscriptTests {
         #expect(md.contains("**[0:13] Speaker 3:** I can take notes."))
     }
 
-    @Test func linesGoToTheVoiceThatOverlapsMost() {
+    @Test func aLineGetsAVoiceOnlyWhenOneWasHeardForMostOfIt() {
         let turns: [(voice: String, start: TimeInterval, end: TimeInterval)] = [("A", 0, 10), ("B", 10, 20), ("A", 30, 40)]
-        let got = VoiceLabels.assign(lines: [(1, 9), (8, 16), (21, 21.5), (25, 26)], turns: turns)
-        #expect(got == ["A", "B", "B", nil])     // third: nobody during it, B ended a second before; fourth: too far from anyone
+        let got = VoiceLabels.assign(lines: [(1, 9), (8, 16), (21, 21.5), (19, 23), (25, 26)], turns: turns)
+        // Third: nobody during it, even though B stopped a second earlier. Fourth: B for a quarter of it.
+        #expect(got == ["A", "B", nil, nil, nil])
     }
 
     @Test func everyKindOfMeetingIsNamedOneWay() {
