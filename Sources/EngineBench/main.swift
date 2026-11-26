@@ -80,6 +80,9 @@ if history {
     for (i, file) in audio.enumerated() {
         let name = file.deletingPathExtension().lastPathComponent
         guard let then = logged[name], let samples = try? converter.resampleAudioFile(file) else { continue }
+        // A recording left running for most of an hour is not a dictation, and takes minutes to redo.
+        guard samples.count <= 300 * 16_000 else { print("\(name)  skipped, \(samples.count / 16_000 / 60) minutes long"); continue }
+        fflush(stdout)
         if i == 0 { _ = try await engine.text(samples: samples, vocabulary: vocab) }   // warm-up
         let start = Date()
         let now = try await engine.text(samples: samples, vocabulary: vocab)

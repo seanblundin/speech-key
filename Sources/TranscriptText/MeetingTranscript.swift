@@ -87,7 +87,7 @@ public struct MeetingTranscript: Sendable {
         if number > 1 { md += ", starting \(Int(Self.overlap)) s before part \(number - 1) ended" }
         md += ".\n\n"
         md += headerNote
-        md += Self.render(linesIn(start, end), micOnly: micOnly)
+        md += Self.render(withoutEchoes(linesIn(start, end)), micOnly: micOnly)
         return (number, name, md)
     }
 
@@ -106,15 +106,23 @@ public struct MeetingTranscript: Sendable {
         }
     }
 
+    /// Mic lines found to be the call echoing through the speakers (see `VoiceLabels.echoes`).
+    public private(set) var echoes: Set<LineKey> = []
+    public mutating func setEchoes(_ keys: Set<LineKey>) { echoes = keys }
+
     /// The lines that reach the page: mic lines that only echo the call are left out.
-    public var heardLines: [Line] { Self.dropEcho(lines) }
+    public var heardLines: [Line] { Self.dropEcho(withoutEchoes(lines)) }
+
+    private func withoutEchoes(_ some: [Line]) -> [Line] {
+        echoes.isEmpty ? some : some.filter { !echoes.contains(LineKey(speaker: $0.speaker, start: $0.start)) }
+    }
 
     /// The whole meeting so far.
     public func fullMarkdown(now: TimeInterval) -> String {
         var md = "# Meeting \(Self.dateTime(startedAt))\(code.map { " · \($0)" } ?? "")\n\n"
         md += "Length \(Self.clock(now)) · \(partEnds.count) part\(partEnds.count == 1 ? "" : "s") saved\n\n"
         md += headerNote
-        md += Self.render(lines, micOnly: micOnly)
+        md += Self.render(withoutEchoes(lines), micOnly: micOnly)
         return md
     }
 

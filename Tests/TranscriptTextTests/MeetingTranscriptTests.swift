@@ -204,4 +204,33 @@ struct MeetingTranscriptTests {
         #expect(md.contains("**[0:05] Room:** It needs one more pass."))
         #expect(md.contains("Lines that clearly match your voice are marked Me"))
     }
+
+    /// Lines from a live test where the mic only ever heard the call through the laptop speakers.
+    @Test func theCallComingBackThroughTheMicIsNotSomeoneInTheRoom() {
+        let call: [(start: TimeInterval, end: TimeInterval, text: String)] = [
+            (180, 187, "Describe the animal and sum up the characteristics of that animal."),
+            (396, 400, "Well what is it doing in the picture?"),
+            (500, 505, "Is that you texting me now?"),
+        ]
+        let mic: [(start: TimeInterval, end: TimeInterval, text: String, mine: Bool)] = [
+            (184.4, 187.0, "and sum up the characteristics of that island.", false),   // garbled, but the call's sentence
+            (396.5, 397.5, "What's it doing?", false),                                  // a short one, still the call
+            (501.0, 503.0, "That was me, that was me.", true),                          // the user answering in the call's own words
+            (700.0, 703.0, "Let's move on to the budget.", false),                      // someone in the room while the call is quiet
+        ]
+        #expect(VoiceLabels.echoes(mic: mic, call: call) == [true, true, false, false])
+    }
+
+    @Test func echoLinesStayOffThePage() {
+        typealias Key = MeetingTranscript.LineKey
+        var t = MeetingTranscript(startedAt: Date(timeIntervalSince1970: 0))
+        t.add(.init(speaker: MeetingTranscript.them, start: 1, end: 5, text: "Sum up the characteristics of that animal."))
+        t.add(.init(speaker: MeetingTranscript.me, start: 2, end: 5, text: "Some of the characters of that island."))
+        t.add(.init(speaker: MeetingTranscript.me, start: 7, end: 9, text: "A dog, because it is loyal."))
+        #expect(t.fullMarkdown(now: 10).contains("that island"))
+        t.setEchoes([Key(speaker: "Me", start: 2)])
+        let md = t.fullMarkdown(now: 10)
+        #expect(!md.contains("that island") && md.contains("that animal") && md.contains("A dog, because it is loyal."))
+        #expect(t.heardLines.count == 2)
+    }
 }

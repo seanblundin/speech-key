@@ -54,6 +54,29 @@ public enum VoiceLabels {
     }
     public static let mineNextTo: Float = 0.35
 
+    /// Which mic lines are only the call coming out of the laptop's speakers and back into the mic.
+    ///
+    /// The older check compares words alone and misses echoes the recognizer garbled ("that island"
+    /// for "that animal"). In a live test (2026-11-26) 19 of 47 pure echoes got through, and with
+    /// voices being named they became a speaker who was never there. Here a mic line is an echo
+    /// when the call was speaking for at least half of it, a third of its words are in what the call
+    /// said around then, and it is not the user's own voice. That last part is what makes it safe:
+    /// a real reply often reuses the other side's words ("Is that you?" "That was me").
+    public static func echoes(mic: [(start: TimeInterval, end: TimeInterval, text: String, mine: Bool)],
+                              call: [(start: TimeInterval, end: TimeInterval, text: String)]) -> [Bool] {
+        mic.map { line in
+            guard !line.mine else { return false }
+            let length = max(line.end - line.start, 0.01)
+            let during = call.reduce(0.0) { $0 + max(0, min($1.end, line.end) - max($1.start, line.start)) }
+            guard during / length >= 0.5 else { return false }
+            var said = Set<String>()
+            for c in call where c.end > line.start - 3 && c.start < line.end + 3 { said.formUnion(MeetingTranscript.words(c.text)) }
+            let words = MeetingTranscript.words(line.text)
+            guard !words.isEmpty else { return false }
+            return Double(words.filter(said.contains).count) / Double(words.count) >= 0.34
+        }
+    }
+
     /// One voice found in one of a meeting's two streams.
     public struct Voice: Sendable {
         public let id: String

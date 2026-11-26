@@ -247,12 +247,14 @@ final class MeetingSession {
                 for (stream, share) in result.unheard {
                     UtterLog.write(String(format: "voices: left %@ as it is; no voice found for %.0f%% of its words", stream, share * 100))
                 }
-                guard !result.streams.isEmpty else { return }
+                guard !result.streams.isEmpty || !result.echoes.isEmpty else { return }
+                self.transcript.setEchoes(result.echoes)
                 self.transcript.setVoices(result.names, on: result.streams)
                 self.voicePrints.merge(result.prints) { _, new in new }
                 self.rewriteSavedFiles()
-                UtterLog.write(String(format: "voices told apart in %.1fs: %@", result.seconds,
-                                      Set(result.names.values).sorted().joined(separator: ", ")))
+                UtterLog.write(String(format: "voices told apart in %.1fs: %@%@", result.seconds,
+                                      Set(result.names.values).sorted().joined(separator: ", "),
+                                      result.echoes.isEmpty ? "" : "; \(result.echoes.count) mic lines were the call echoing"))
             } catch {
                 UtterLog.write("voices: couldn't tell them apart: \(error.localizedDescription)")
             }

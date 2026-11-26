@@ -29,6 +29,8 @@ enum MeetingVoices {
         var names: [MeetingTranscript.LineKey: String] = [:]
         /// Name → that voice's fingerprint, to keep numbers steady at the next snapshot.
         var prints: [String: [Float]] = [:]
+        /// Mic lines that are the call echoing through the speakers; they are left off the page.
+        var echoes: Set<MeetingTranscript.LineKey> = []
         /// The streams that were split and named ("Me", "Them").
         var streams: Set<String> = []
         /// Streams left with their plain label because the splitter couldn't hear them well enough:
@@ -84,14 +86,56 @@ enum MeetingVoices {
             }
             for (voice, print) in split.prints { prints[stream + "/" + voice] = print }
         }
+        typealias Key = MeetingTranscript.LineKey
+        func key(_ l: MeetingTranscript.Line) -> Key { Key(speaker: l.speaker, start: l.start) }
         // In the order they first spoke, across both streams.
-        var order: [String] = []
-        for line in heard {
-            if let id = voiceOf[.init(speaker: line.speaker, start: line.start)], !order.contains(id) { order.append(id) }
+        func voicesInOrder(_ lines: [MeetingTranscript.Line]) -> [VoiceLabels.Voice] {
+            var order: [String] = []
+            for line in lines { if let id = voiceOf[key(line)], !order.contains(id) { order.append(id) } }
+            return order.map { VoiceLabels.Voice(id: $0, print: prints[$0], onMic: $0.hasPrefix(MeetingTranscript.me + "/")) }
         }
-        let voices = order.map { VoiceLabels.Voice(id: $0, print: prints[$0], onMic: $0.hasPrefix(MeetingTranscript.me + "/")) }
+        var voices = voicesInOrder(heard)
         let mine = voices.contains(where: \.onMic) ? await VoicePrint.mine() : nil
-        let names = VoiceLabels.names(voices: voices, mine: mine, previous: previous)
+        var names = VoiceLabels.names(voices: voices, mine: mine, previous: previous)
+
+        // On a call, the mic also hears the call through the speakers. Those lines aren't anyone in
+        // the room: take them out before numbering, or they become a speaker who was never there.
+        let micLines = heard.filter { $0.speaker == MeetingTranscript.me }
+        let callLines = heard.filter { $0.speaker == MeetingTranscript.them }
+        if !micLines.isEmpty, !callLines.isEmpty, let micTape = tapes[MeetingTranscript.me] {
+            let myVoice = names.first { $0.value == VoiceLabels.me }?.key
+            let myLinePrint = await VoicePrint.mineByLine()
+            var isMine: [Bool] = []
+            for line in micLines {
+                if let id = voiceOf[key(line)], id == myVoice { isMine.append(true); continue }
+                // No voice named Me to go by: fingerprint the line itself against the user's voice.
+                guard myVoice == nil, let myLinePrint else { isMine.append(false); continue }
+                let pad = max(0, (1.2 - (line.end - line.start)) / 2)
+                let sound = StreamTape.samples(of: micTape, from: line.start - pad, to: line.end + pad)
+                let print = sound.count >= 8_000 ? try? await SpeakerSplitter.shared.fingerprint(sound) : nil
+                isMine.append(print.map { VoiceLabels.similarity($0, myLinePrint) >= VoiceLabels.mineNextTo } ?? false)
+            }
+            // With no way to know the user's voice at all, the older word check stands alone.
+            if myVoice != nil || myLinePrint != nil {
+                var flags = VoiceLabels.echoes(mic: zip(micLines, isMine).map { ($0.start, $0.end, $0.text, $1) },
+                                               call: callLines.map { ($0.start, $0.end, $0.text) })
+                // A mic voice that is nearly all echo is all echo: its short "okay"s too.
+                var words: [String: (echo: Int, all: Int)] = [:]
+                for (line, flag) in zip(micLines, flags) {
+                    guard let id = voiceOf[key(line)], id != myVoice else { continue }
+                    let n = line.text.split(separator: " ").count
+                    words[id, default: (0, 0)].all += n
+                    if flag { words[id]!.echo += n }
+                }
+                let echoVoices = Set(words.filter { Double($0.value.echo) >= 0.8 * Double($0.value.all) }.keys)
+                for (i, line) in micLines.enumerated() { if let id = voiceOf[key(line)], echoVoices.contains(id) { flags[i] = true } }
+                out.echoes = Set(zip(micLines, flags).filter(\.1).map { key($0.0) })
+                if !out.echoes.isEmpty {
+                    voices = voicesInOrder(heard.filter { !out.echoes.contains(key($0)) })
+                    names = VoiceLabels.names(voices: voices, mine: mine, previous: previous)
+                }
+            }
+        }
         for (key, id) in voiceOf { out.names[key] = names[id] }
         for (id, name) in names { if let p = prints[id] { out.prints[name] = p } }
         out.seconds = Date().timeIntervalSince(started)

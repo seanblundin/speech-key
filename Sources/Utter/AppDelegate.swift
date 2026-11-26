@@ -238,7 +238,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 defer { tapes.values.forEach { $0.close(keep: false) }; try? FileManager.default.removeItem(at: folder) }
                 do {
                     let result = try await MeetingVoices.name(transcript, tapes: tapes.mapValues(\.url), previous: [:])
+                    transcript.setEchoes(result.echoes)
                     transcript.setVoices(result.names, on: result.streams)
+                    if !result.echoes.isEmpty { print("\(result.echoes.count) mic lines were the call echoing") }
                     for (stream, share) in result.unheard { print(String(format: "left %@ as it is: no voice found for %.0f%% of its words", stream, share * 100)) }
                     print(String(format: "voices told apart in %.1fs for %.1f min: %@", result.seconds, length / 60,
                                  Set(result.names.values).sorted().joined(separator: ", ")))
@@ -257,7 +259,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             meeting.start()
             DispatchQueue.main.asyncAfter(deadline: .now() + seconds / 2) { self.meeting.snapshot() }
             DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { self.meeting.end() }
-            DispatchQueue.main.asyncAfter(deadline: .now() + seconds + 8) { NSApp.terminate(nil) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + seconds + 75) { NSApp.terminate(nil) }   // long enough for the voices to be named
             return
         }
         if let folder = arg("--test-name-voices") {
