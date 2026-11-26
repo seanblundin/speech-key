@@ -35,7 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let i = args.firstIndex(of: name), i + 1 < args.count else { return nil }
             return args[i + 1]
         }
-        let testing = args.contains { $0.hasPrefix("--simulate") || $0 == "--render-pill" || $0 == "--test-meeting" || $0 == "--test-voices" || $0 == "--test-line-voices" || $0 == "--test-paste" || $0 == "--test-titles" || $0 == "--test-update-check" || $0 == "--give-codes" || $0 == "--verify-models" }
+        let testing = args.contains { $0.hasPrefix("--simulate") || $0 == "--render-pill" || $0 == "--test-meeting" || $0 == "--test-voices" || $0 == "--test-line-voices" || $0 == "--replay-commands" || $0 == "--test-paste" || $0 == "--test-titles" || $0 == "--test-update-check" || $0 == "--give-codes" || $0 == "--verify-models" }
         if testing { controller.log.enabled = false }
         fnMonitor = FnKeyMonitor()
         setup = SetupWindowController()
@@ -257,6 +257,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + seconds / 2) { self.meeting.snapshot() }
             DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { self.meeting.end() }
             DispatchQueue.main.asyncAfter(deadline: .now() + seconds + 8) { NSApp.terminate(nil) }
+            return
+        }
+        if args.contains("--replay-commands") {
+            // Runs every command in the log through today's agent again, with the dictations that
+            // came before it, and prints what it would decide now. Changes nothing.
+            Task {
+                let all: [DictationLog.Entry] = DictationLog.read(DictationLog.file)
+                let glossary = (try? Glossary.load(path: self.glossaryStore.path)) ?? .empty
+                for (i, e) in all.enumerated() where e.kind == "command" {
+                    let before = Array(all[..<i])
+                    let latest = RecentText.latest(before: e.time, from: before)
+                    let (input, spelled) = SpelledLetters.join(e.final)
+                    let written: (String) -> Bool = { w in before.suffix(200).contains { $0.kind == nil && (FixResolver.contains($0.raw, w) || FixResolver.contains($0.final, w)) } }
+                    print("\nSAID: \(e.final.prefix(200))")
+                    if let first = latest.first { print("  last dictation: \(first.prefix(110))") }
+                    print("  THEN: \(e.reply ?? "")")
+                    guard let parsed = try? await brain.interpret(input, recent: latest) else { print("  NOW:  (the model failed)"); continue }
+                    var now = "\(parsed.action.rawValue)"
+                    if parsed.action == .addToGlossary {
+                        let d = FixResolver.decide(correct: parsed.correct, wrong: parsed.wrong, spelled: spelled, said: e.final, latest: latest, written: written, glossary: glossary)
+                        now = CommandRunner.reply(to: d) { heard, correct in ("Got it: \(heard.joined(separator: ", ")) → \(correct) from now on", true) }.0
+                        now += "   [model: correct \(parsed.correct), wrong \(parsed.wrong)]"
+                    } else if parsed.action == .reply { now = "reply: \(parsed.reply)" }
+                    print("  NOW:  \(now)")
+                }
+                fflush(stdout)
+                NSApp.terminate(nil)
+            }
             return
         }
         if let file = arg("--simulate-command") {

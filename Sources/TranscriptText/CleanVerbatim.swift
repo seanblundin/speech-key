@@ -242,7 +242,16 @@ public enum CleanVerbatim {
     }
 
     /// Whether one word said twice in a row is a stutter: only the small connecting words are.
-    static func isStutter(_ first: Token) -> Bool { stutterWords.contains(first.key) }
+    /// A verb with a comma after it can end one clause while the same verb starts the next ("the
+    /// last thing I did, did you catch that?", cut wrongly on 2026-11-26), so those need no comma between.
+    static func isStutter(_ first: Token) -> Bool {
+        guard stutterWords.contains(first.key) else { return false }
+        return clauseEnders.contains(first.key) ? first.trail.isEmpty : true
+    }
+    static let clauseEnders: Set<String> = [
+        "is", "are", "was", "were", "be", "been", "am", "can", "did", "does", "have", "has", "will", "would", "should", "could",
+        "it", "you", "me", "us", "him", "her", "them", "this", "there", "then", "before", "after", "in", "on", "to", "for", "with", "about",
+    ]
 
     /// Fix spacing and capitals left behind by removals.
     static func tidy(_ s: String) -> String {

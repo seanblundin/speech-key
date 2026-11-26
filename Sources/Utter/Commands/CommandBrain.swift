@@ -21,7 +21,8 @@ protocol CommandBrain {
     var unavailableReason: String? { get }
     var name: String { get }
     func prewarm()
-    func interpret(_ text: String) async throws -> ParsedCommand
+    /// `recent` is the newest few dictations, newest first, so "the last thing I said" means something.
+    func interpret(_ text: String, recent: [String]) async throws -> ParsedCommand
 }
 
 @MainActor
@@ -36,7 +37,7 @@ private struct NoBrain: CommandBrain {
     var unavailableReason: String? { "Talking to the agent needs macOS 26 (Tahoe) with Apple Intelligence" }
     var name: String { "None" }
     func prewarm() {}
-    func interpret(_ text: String) async throws -> ParsedCommand { ParsedCommand(action: .unclear) }
+    func interpret(_ text: String, recent: [String]) async throws -> ParsedCommand { ParsedCommand(action: .unclear) }
 }
 
 #if canImport(FoundationModels)
@@ -78,10 +79,13 @@ final class OnDeviceBrain: CommandBrain {
 
     A word written like JIMMY [spelled] was spelled out letter by letter: it is the exact spelling.
 
+    You may be shown the user's latest dictations, as you wrote them. "The last thing I said", "that" or "what you just wrote" means the newest one. If the user says what a word should be and it is spelled differently there, that different spelling is the wrong one. A question about a fix ("is that fixed now?", "did you catch that?") is still fixWord: give the correct spelling they named.
+
     Examples:
     "Jammy should be Jimmy, he's my friend" → fixWord, correct Jimmy, wrong [Jammy]
     "When you hear Teegh, write Tighe" → fixWord, correct Tighe, wrong [Teegh]
     "Your last one said Kelsey instead of Kalshi" → fixWord, correct Kalshi, wrong [Kelsey]
+    Latest dictation "Ask Marigold Tenny about it." and the user says "The last thing I said, it needs to be Marisol Tunney" → fixWord, correct Marisol Tunney, wrong [Marigold Tenny]
     "Stop changing Jammy to Jimmy" → removeFix, correct Jimmy, wrong [Jammy]
     "Take a snapshot" → snapshot
     "Never mind, take that back" → undo
@@ -109,12 +113,17 @@ final class OnDeviceBrain: CommandBrain {
         warm = s
     }
 
-    func interpret(_ text: String) async throws -> ParsedCommand {
+    func interpret(_ text: String, recent: [String]) async throws -> ParsedCommand {
         // A fresh session each time, so one command never colours the next.
         let session = warm ?? LanguageModelSession(instructions: Self.instructions)
         warm = nil
         defer { prewarm() }
-        let response = try await session.respond(to: text, generating: GeneratedCommand.self,
+        var prompt = text
+        if !recent.isEmpty {
+            let shown = recent.prefix(3).enumerated().map { "\($0.offset + 1). “\($0.element.prefix(300))”" }.joined(separator: "\n")
+            prompt = "Your latest dictations, newest first:\n\(shown)\n\nThe user now says: “\(text)”"
+        }
+        let response = try await session.respond(to: prompt, generating: GeneratedCommand.self,
                                                  options: GenerationOptions(sampling: .greedy, maximumResponseTokens: 120))
         let c = response.content
         let action: ParsedCommand.Action

@@ -35,7 +35,7 @@ final class CommandRunner {
             let started = Date()
             let (input, spelled) = SpelledLetters.join(text)
             let parsed: ParsedCommand
-            do { parsed = try await brain.interpret(input) } catch {
+            do { parsed = try await brain.interpret(input, recent: RecentText.latest()) } catch {
                 UtterLog.write("command failed: \(error)")
                 finish(text: text, raw: raw, reply: "Lost my train of thought. Try again?", ok: false)
                 return
@@ -50,21 +50,15 @@ final class CommandRunner {
     private func execute(_ c: ParsedCommand, said text: String, spelled: [String]) -> (String, ok: Bool, showsOwnPill: Bool) {
         switch c.action {
         case .addToGlossary:
-            switch CommandWords.tidy(correct: c.correct, wrong: c.wrong, spelled: spelled, said: text) {
-            case .missing:
-                return ("Which word do I get wrong? Try “Jammy should be Jimmy”", false, false)
-            case .sameWord(let w):
-                return ("I heard “\(w)” twice. Spell the right one?", false, false)
-            case .ok(let correct, let wrong):
-                // Only fix words Utter really wrote. The model sometimes turns a question into a
-                // "fix" (2026-10-20: "yes, pill, UI → self-aware"), and adds made-up variants.
-                let seen = wrong.filter(RecentText.contains)
-                guard !seen.isEmpty else {
-                    let w = wrong.first ?? ""
-                    return ("I haven't written “\(w)” lately, so I didn't change anything", false, false)
-                }
-                do { return (try glossary.add(heard: seen, correct: correct, source: .voice), true, false) }
-                catch { return (error.localizedDescription, false, false) }
+            // The wrong word is looked up in what was really written, not taken on the model's word:
+            // it turns questions into "fixes" (2026-10-20: "yes, pill, UI → self-aware") and makes up
+            // misspellings (2026-11-26: "Marisol Tuny").
+            let decision = FixResolver.decide(correct: c.correct, wrong: c.wrong, spelled: spelled, said: text,
+                                              latest: RecentText.latest(), written: RecentText.contains,
+                                              glossary: (try? Glossary.load(path: glossary.path)) ?? .empty)
+            return Self.reply(to: decision) { heard, correct in
+                do { return (try self.glossary.add(heard: heard, correct: correct, source: .voice), true) }
+                catch { return (error.localizedDescription, false) }
             }
         case .removeFromGlossary:
             let words = ([c.correct] + c.wrong).map { $0.replacingOccurrences(of: " [spelled]", with: "") }
@@ -94,6 +88,20 @@ final class CommandRunner {
             return (text.isEmpty ? "I can fix words, run meetings, and undo" : text, true, false)
         case .unclear:
             return ("I can't do that yet. Try “Jammy should be Jimmy”", false, false)
+        }
+    }
+
+    /// What to tell the user for a decision; `add` carries out a new fix.
+    static func reply(to decision: FixResolver.Decision, add: ([String], String) -> (String, Bool)) -> (String, ok: Bool, showsOwnPill: Bool) {
+        switch decision {
+        case .missing: return ("Which word do I get wrong? Try “Jammy should be Jimmy”", false, false)
+        case .sameWord(let w): return ("I heard “\(w)” twice. Spell the right one?", false, false)
+        case .unknown(let w): return ("I haven't written anything like “\(w)” lately, so I changed nothing", false, false)
+        case .alreadyRight(let w): return ("Your last one already says \(w)", true, false)
+        case .alreadyFixed(let heard, let correct): return ("Yes: \(heard) → \(correct) is in your glossary", true, false)
+        case .add(let heard, let correct):
+            let (text, ok) = add(heard, correct)
+            return (text, ok, false)
         }
     }
 
@@ -136,8 +144,23 @@ enum RecentText {
         return corpus().contains { re.firstMatch(in: $0, range: NSRange(location: 0, length: ($0 as NSString).length)) != nil }
     }
 
+    /// The newest few dictations (not commands), newest first, each as pasted and, where it
+    /// differs, as heard. "The last thing I said" is in here. Only the last quarter of an hour.
+    static func latest(before: Date = Date(), from entries: [DictationLog.Entry]? = nil) -> [String] {
+        let recent = (entries ?? DictationLog.recent(limit: 40))
+            .filter { $0.kind == nil && $0.time < before && before.timeIntervalSince($0.time) < 900 }.suffix(4).reversed()
+        var out: [String] = []
+        for e in recent {
+            let pasted = e.final.trimmingCharacters(in: .whitespaces)
+            out.append(pasted)
+            if e.raw != pasted, e.raw != e.final { out.append(e.raw) }
+        }
+        return out
+    }
+
     private static func corpus() -> [String] {
-        var texts = DictationLog.recent(limit: 200).flatMap { [$0.raw, $0.final] }
+        // Dictations only: a word Sean said to the agent isn't a word Speech Key wrote for him.
+        var texts = DictationLog.recent(limit: 200).filter { $0.kind == nil }.flatMap { [$0.raw, $0.final] }
         let fm = FileManager.default
         if let folders = try? fm.contentsOfDirectory(at: MeetingController.root, includingPropertiesForKeys: nil),
            let newest = folders.filter({ !$0.lastPathComponent.hasPrefix(".") }).map(\.lastPathComponent).sorted().last {

@@ -177,17 +177,17 @@ struct MeetingTranscriptTests {
         #expect(names == ["x": "Speaker 2", "y": "Speaker 3", "z": "Speaker 1"])
     }
 
-    /// Scores from Sean's own recording of 2026-11-26 (five people around a room).
+    /// Scores from a real recording of five people around a room (2026-11-26).
     @Test func myOwnLinesArePickedOutWhenTheRoomCannotBeToldApart() {
         let lines: [(start: TimeInterval, end: TimeInterval, score: Float)] = [
-            (42.2, 44.7, 0.40),    // "All right, I'm recording."            mine, short of sure, but right before a sure one
-            (44.9, 54.4, 0.62),    // "I'm seeing if the model…"             mine
-            (55.3, 58.9, 0.38),    // "It's a pretty good benchmark…"        mine, right after a sure one
-            (58.9, 59.9, 0.41),    // "Yeah, true."                          someone else; next to a maybe, not a sure one
-            (59.9, 63.7, 0.31),    // "Did you use the Nvidia model?"        a brother
-            (63.9, 67.0, 0.60),    // "There's two different contenders…"    mine
-            (67.1, 68.1, 0.09),    // "Oh no!"                               someone else
-            (125.7, 127.1, 0.03),  // "What do you mean?"                    someone else
+            (42.2, 44.7, 0.40),    // the user, short of sure, but right before a sure line
+            (44.9, 54.4, 0.62),    // the user, a long clear line
+            (55.3, 58.9, 0.38),    // the user, right after a sure line
+            (58.9, 59.9, 0.41),    // someone else; next to a maybe, not a sure one
+            (59.9, 63.7, 0.31),    // someone with a similar voice
+            (63.9, 67.0, 0.60),    // the user
+            (67.1, 68.1, 0.09),    // someone else
+            (125.7, 127.1, 0.03),  // someone else
             (16.0, 16.3, 0.52),    // a third of a second: too short to be sure of alone
         ]
         #expect(VoiceLabels.mineByLine(lines) == [true, true, true, false, false, true, false, false, false])
@@ -196,12 +196,12 @@ struct MeetingTranscriptTests {
     @Test func aRoomWhereOnlyMyLinesAreKnownSaysSo() {
         typealias Key = MeetingTranscript.LineKey
         var t = MeetingTranscript(startedAt: Date(timeIntervalSince1970: 0))
-        t.add(.init(speaker: MeetingTranscript.me, start: 1, end: 4, text: "Kelly, what did you have for breakfast?"))
-        t.add(.init(speaker: MeetingTranscript.me, start: 5, end: 7, text: "Like five thousand grapes."))
+        t.add(.init(speaker: MeetingTranscript.me, start: 1, end: 4, text: "Priya, what did you think of the draft?"))
+        t.add(.init(speaker: MeetingTranscript.me, start: 5, end: 7, text: "It needs one more pass."))
         t.setVoices([Key(speaker: "Me", start: 1): "Me"], on: ["Me"])
         let md = t.fullMarkdown(now: 10)
-        #expect(md.contains("**[0:01] Me:** Kelly, what did you have for breakfast?"))
-        #expect(md.contains("**[0:05] Room:** Like five thousand grapes."))
+        #expect(md.contains("**[0:01] Me:** Priya, what did you think of the draft?"))
+        #expect(md.contains("**[0:05] Room:** It needs one more pass."))
         #expect(md.contains("Lines that clearly match your voice are marked Me"))
     }
 }

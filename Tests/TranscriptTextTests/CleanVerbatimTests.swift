@@ -104,6 +104,7 @@ struct CleanVerbatimTests {
         // Nouns, adjectives and verbs are doubled on purpose often enough that they always stay.
         for keep in [
             "Create a master master folder anyway.", "Okay, final final take.", "You wanted to generate generate the image.",
+            "The last thing I did, did you catch that?", "Whatever it is, is fine by me.", "Send it to me, me being the owner.",
             "That is very very important.", "No no, not that one.", "I think that that is fine.",
             "Blah blah blah, you get it.", "Wait, wait, hold on.", "It was one one two three.",
             "It's not not working.", "Really really good.", "He had had enough.",

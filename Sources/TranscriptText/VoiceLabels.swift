@@ -15,7 +15,7 @@ public enum VoiceLabels {
 
     /// For each line, the voice heard during most of it; nil where no voice was found speaking for
     /// at least half the line. A line is never given to a voice that merely spoke nearby: in Sean's
-    /// first live test (2026-11-26, five family members answering in one or two words from across a
+    /// first live test (2026-11-26, five people answering in one or two words from across a
     /// room) the splitter heard only the person next to the mic, and "nearest voice" put everyone's
     /// answers in his mouth.
     public static func assign(lines: [(start: TimeInterval, end: TimeInterval)],
@@ -38,9 +38,9 @@ public enum VoiceLabels {
     /// The fallback when the voices in a room can't be told apart: which lines are clearly the
     /// user's own. `scores` is each line's own fingerprint against the user's voice.
     ///
-    /// From Sean's two family recordings (2026-11-26, people talking from across a room): his
+    /// From Sean's first two live recordings (2026-11-26, people talking from across a room): his
     /// longer lines scored 0.58 to 0.66 and everyone else's 0.31 or less, with his short lines and a
-    /// brother's in between. So a line of a second or more at 0.5 is his, and a line right next to
+    /// similar voice's in between. So a line of a second or more at 0.5 is his, and a line right next to
     /// one of those (within a second) at 0.35 is too. Nothing else is claimed.
     public static func mineByLine(_ lines: [(start: TimeInterval, end: TimeInterval, score: Float)]) -> [Bool] {
         let sure = lines.map { $0.end - $0.start >= 1.0 && $0.score >= mineAtLeast }
