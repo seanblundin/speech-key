@@ -21,6 +21,9 @@ public enum ModelIntegrity {
     /// Throws if any file in `folder` (one of FluidAudio's model folders) is unknown or changed.
     /// Folders the manifest doesn't cover (models only the benchmark uses) are let through.
     public static func verify(_ folder: URL) throws {
+        // Resolved first: the files are listed by their real paths, so a home folder reached through
+        // a symbolic link would otherwise give every file the wrong name and fail the check.
+        let folder = folder.resolvingSymlinksInPath()
         let name = folder.lastPathComponent
         let expected = ModelManifest.files.filter { $0.key.hasPrefix(name + "/") }
         guard !expected.isEmpty else { return }
@@ -32,7 +35,7 @@ public enum ModelIntegrity {
         for case let url as URL in walker {
             let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey])
             guard values.isRegularFile == true else { continue }
-            let rel = name + "/" + url.path.dropFirst(folder.path.count + 1)
+            let rel = name + "/" + url.resolvingSymlinksInPath().path.dropFirst(folder.path.count + 1)
             guard let want = expected[rel] else { throw Mismatch(file: rel) }
             seen += 1
             let stamp = "\(values.fileSize ?? -1):\(values.contentModificationDate?.timeIntervalSince1970 ?? 0)"

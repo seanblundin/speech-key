@@ -69,10 +69,11 @@ public actor SpeechEngine {
         self.model = model
         // The main model is about six times the size of the name-boosting one.
         let share = boostNames ? 0.86 : 1.0
-        let folder = try await AsrModels.download(version: model.fluid, progressHandler: { p in
-            if case .downloading = p.phase { progress?(p.fractionCompleted * share) }
-        })
-        try ModelIntegrity.verify(folder)
+        let folder = try await Self.checked {
+            try await AsrModels.download(version: model.fluid, progressHandler: { p in
+                if case .downloading = p.phase { progress?(p.fractionCompleted * share) }
+            })
+        }
         let models = try await AsrModels.load(from: folder, version: model.fluid)
         let manager = AsrManager(config: .default)
         try await manager.loadModels(models)
@@ -88,11 +89,26 @@ public actor SpeechEngine {
                 }
             }
             defer { watch?.cancel() }
-            let ctcFolder = try await CtcModels.download()
-            try ModelIntegrity.verify(ctcFolder)
+            let ctcFolder = try await Self.checked { try await CtcModels.download() }
             self.ctcModels = try await CtcModels.load(from: ctcFolder)
         } else {
             self.ctcModels = nil
+        }
+    }
+
+    /// Downloads a model folder (a no-op when it is already there) and checks it against the
+    /// manifest. A copy that fails the check, damaged or left half-written by something outside the
+    /// downloader, is thrown away and fetched fresh once; if that fails the check too, it's an error.
+    private static func checked(_ download: () async throws -> URL) async throws -> URL {
+        let folder = try await download()
+        do {
+            try ModelIntegrity.verify(folder)
+            return folder
+        } catch is ModelIntegrity.Mismatch {
+            try? FileManager.default.removeItem(at: folder)
+            let fresh = try await download()
+            try ModelIntegrity.verify(fresh)
+            return fresh
         }
     }
 
