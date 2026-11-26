@@ -21,6 +21,11 @@ final class MeetingSession {
     private var streams: [Stream] = []
     private(set) var lastSpeechAt = Date()
     private var statsTimer: Timer?
+    /// The mic recorded to a file, so the voices in a mic-only meeting can be told apart.
+    private var tape: MicTape?
+    /// Names given to voices so far in this meeting, with each voice's fingerprint.
+    private var voicePrints: [String: [Float]] = [:]
+    private var naming: Task<Void, Never>?
     var elapsed: TimeInterval { Date().timeIntervalSince(startedAt) }
     var heardCallAudio: Bool { tap.heardAnything }
     /// Characters transcribed so far from one stream ("Me" or "Them").
@@ -106,7 +111,9 @@ final class MeetingSession {
         let me = makeStream(MeetingTranscript.me)
         let meStats = streams.last!.stats
         let meClock = StreamClock(start: startedAt)
-        mic.onSamples = { let s = meClock.align($0); meStats.add(s); me.yield(s) }
+        let tape = MicTape(folder: folder)
+        self.tape = tape
+        mic.onSamples = { let s = meClock.align($0); meStats.add(s); tape?.append(s); me.yield(s) }
         do { try mic.start() } catch { UtterLog.write("mic start failed: \(error)"); throw error }
         UtterLog.write("mic started: \(mic.formatDescription)")
         let them = makeStream(MeetingTranscript.them)
@@ -171,6 +178,12 @@ final class MeetingSession {
     /// Everything up to this moment, written as the next part. Flushes the open chunk on both
     /// streams first (at interactive priority) so Sean's last sentence makes it in.
     func snapshot() async -> (number: Int, file: URL, end: TimeInterval) {
+        let saved = await save()
+        nameVoices(last: false)
+        return saved
+    }
+
+    private func save() async -> (number: Int, file: URL, end: TimeInterval) {
         let end = elapsed
         for stream in streams {
             // Skip silent tails: the model can invent a word ("nul") out of digital silence.
@@ -195,14 +208,62 @@ final class MeetingSession {
 
     /// Final snapshot, then stop capturing.
     func finish() async -> (parts: Int, length: TimeInterval) {
-        let last = await snapshot()
+        let last = await save()
         stopCapture()
+        nameVoices(last: true)
         try? liveLog?.close()
         let fm = FileManager.default
         try? fm.moveItem(at: folder.appendingPathComponent(MeetingRecovery.liveName),
                          to: folder.appendingPathComponent(MeetingRecovery.doneName))
         return (last.number, last.end)
     }
+
+    /// In a mic-only meeting, tells the voices apart and rewrites the saved files with names in
+    /// place of "Room". Runs after the files are saved, so a snapshot never waits for it (a
+    /// one-hour meeting takes about 15 s on an M2 Air); the names land in the same files moments later.
+    private func nameVoices(last: Bool) {
+        guard let tape else { return }
+        let earlier = naming
+        naming = Task { [weak self] in
+            await earlier?.value
+            guard let self else { return }
+            defer {
+                if last {
+                    tape.close(keep: AudioKeep.limit > 0)
+                    self.tape = nil
+                    MeetingVoices.pruneTapes(in: self.folder.deletingLastPathComponent())
+                }
+            }
+            guard self.transcript.micOnly, tape.seal() >= MeetingVoices.minimumSeconds else { return }
+            do {
+                let result = try await MeetingVoices.name(self.transcript, tape: tape.url, previous: self.voicePrints)
+                self.transcript.setVoices(result.names)
+                self.voicePrints.merge(result.prints) { _, new in new }
+                self.rewriteSavedFiles()
+                UtterLog.write(String(format: "voices told apart in %.1fs: %@", result.seconds,
+                                      Set(result.names.values).sorted().joined(separator: ", ")))
+            } catch {
+                UtterLog.write("voices: couldn't tell them apart: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Every saved part, `latest` and `full` again, as the transcript reads now.
+    private func rewriteSavedFiles() {
+        let tag = folder.lastPathComponent
+        var newest: String?
+        for number in 1...max(1, transcript.partEnds.count) {
+            guard let part = transcript.part(number) else { continue }
+            try? part.markdown.write(to: folder.appendingPathComponent(part.fileName), atomically: true, encoding: .utf8)
+            newest = part.markdown
+        }
+        if let newest { try? newest.write(to: folder.appendingPathComponent(MeetingNames.latest(tag)), atomically: true, encoding: .utf8) }
+        try? transcript.fullMarkdown(now: transcript.partEnds.last ?? elapsed)
+            .write(to: folder.appendingPathComponent(MeetingNames.full(tag)), atomically: true, encoding: .utf8)
+    }
+
+    /// For tests: waits until the voices have been named.
+    func voicesNamed() async { await naming?.value }
 
     func stopCapture() {
         statsTimer?.invalidate()

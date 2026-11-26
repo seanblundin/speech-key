@@ -108,7 +108,8 @@ final class MeetingTitler {
 enum OnDeviceMeetingTitle {
     static let instructions = """
     You title meeting transcripts. "Me" is the user; "Them" is everyone else on the call. \
-    "Room" means a mic-only recording, such as an in-person meeting: every voice there, the user's included. Be concrete and plain: \
+    "Room" means a mic-only recording, such as an in-person meeting: every voice there, the user's included. \
+    "Speaker 1", "Speaker 2" are other people in the room, told apart by voice. Be concrete and plain: \
     name the project, company, product or event if one is clear. Never invent facts.
     """
 

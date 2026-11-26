@@ -33,7 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let i = args.firstIndex(of: name), i + 1 < args.count else { return nil }
             return args[i + 1]
         }
-        let testing = args.contains { $0.hasPrefix("--simulate") || $0 == "--render-pill" || $0 == "--test-meeting" || $0 == "--test-paste" || $0 == "--test-titles" || $0 == "--test-update-check" || $0 == "--give-codes" || $0 == "--verify-models" }
+        let testing = args.contains { $0.hasPrefix("--simulate") || $0 == "--render-pill" || $0 == "--test-meeting" || $0 == "--test-voices" || $0 == "--test-paste" || $0 == "--test-titles" || $0 == "--test-update-check" || $0 == "--give-codes" || $0 == "--verify-models" }
         if testing { controller.log.enabled = false }
         fnMonitor = FnKeyMonitor()
         setup = SetupWindowController()
@@ -145,6 +145,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     print(String(format: "%@  %@  %.1fs  title %d chars, summary %d chars", r == nil ? "FAILED" : "ok    ",
                                  m.folder.lastPathComponent, Date().timeIntervalSince(t0), r?.title.count ?? 0, r?.summary.count ?? 0))
                 }
+                NSApp.terminate(nil)
+            }
+            return
+        }
+        if let file = arg("--test-voices") {
+            // SpeechKey --test-voices recording.wav: treat a recording as the mic of a mic-only
+            // meeting. Transcribes it the way a meeting does, tells the voices apart, prints the transcript.
+            controller.loadEngine()
+            Task {
+                let url = URL(fileURLWithPath: file)
+                guard let engine = await controller.sharedEngine(), let samples = try? SpeechEngine.loadAudioFile(url),
+                      let chunker = try? await PauseChunker.make() else { print("can't read \(file)"); NSApp.terminate(nil); return }
+                var transcript = MeetingTranscript(startedAt: Date())
+                var chunks: [PauseChunker.Chunk] = []
+                var i = 0
+                while i < samples.count {
+                    chunks += (try? await chunker.append(Array(samples[i..<min(i + 16_000, samples.count)]))) ?? []
+                    i += 16_000
+                }
+                if let tail = await chunker.flush() { chunks.append(tail) }
+                for chunk in chunks where chunk.hasSpeech && chunk.samples.count >= SpeechEngine.minimumSamples {
+                    for seg in (try? await engine.transcribe(samples: chunk.samples, vocabulary: [], priority: .interactive)) ?? [] {
+                        transcript.add(.init(speaker: MeetingTranscript.me, start: chunk.start + seg.start, end: chunk.start + seg.end, text: seg.text))
+                    }
+                }
+                let length = Double(samples.count) / 16_000
+                _ = transcript.makePart(endingAt: length)
+                // Through the same mic recording a live meeting writes, sealed once part-way like a snapshot.
+                let folder = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("speechkey-test-voices-\(getpid())")
+                try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                guard let tape = MicTape(folder: folder) else { print("can't write the mic recording"); NSApp.terminate(nil); return }
+                var at = 0
+                while at < samples.count {
+                    tape.append(Array(samples[at..<min(at + 1_600, samples.count)]))
+                    at += 1_600
+                    if at == 1_600 * (samples.count / 3_200) { _ = tape.seal() }
+                }
+                print(String(format: "mic recording: %.1fs on tape for %.1fs of audio", tape.seal(), length))
+                defer { tape.close(keep: false); try? FileManager.default.removeItem(at: folder) }
+                do {
+                    let result = try await MeetingVoices.name(transcript, tape: tape.url, previous: [:])
+                    transcript.setVoices(result.names)
+                    print(String(format: "voices told apart in %.1fs for %.1f min: %@", result.seconds, length / 60,
+                                 Set(result.names.values).sorted().joined(separator: ", ")))
+                } catch { print("couldn't tell voices apart: \(error)") }
+                print(transcript.fullMarkdown(now: length))
+                fflush(stdout)
                 NSApp.terminate(nil)
             }
             return

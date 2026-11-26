@@ -14,11 +14,15 @@ public struct MeetingTranscript: Sendable {
         public let start: TimeInterval
         public let end: TimeInterval
         public let text: String
-        public init(speaker: String, start: TimeInterval, end: TimeInterval, text: String) {
+        /// In a mic-only meeting, whose voice this is, told apart by sound: "Me" or "Speaker 2".
+        /// nil until the voices have been told apart (see `setVoices`).
+        public var voice: String?
+        public init(speaker: String, start: TimeInterval, end: TimeInterval, text: String, voice: String? = nil) {
             self.speaker = speaker
             self.start = start
             self.end = end
             self.text = text
+            self.voice = voice
         }
     }
 
@@ -69,22 +73,37 @@ public struct MeetingTranscript: Sendable {
     public mutating func makePart(endingAt end: TimeInterval) -> (number: Int, fileName: String, markdown: String) {
         let window = nextPartWindow(endingAt: end)
         partEnds.append(window.end)
-        let number = partEnds.count
-        let name = MeetingNames.part(number, start: window.start, end: window.end, tag: tag)
+        return part(partEnds.count)!
+    }
+
+    /// A saved part again, as it reads now (after voices were told apart, say). Parts count from 1.
+    public func part(_ number: Int) -> (number: Int, fileName: String, markdown: String)? {
+        guard number >= 1, number <= partEnds.count else { return nil }
+        let start = number == 1 ? 0 : max(0, partEnds[number - 2] - Self.overlap)
+        let end = max(partEnds[number - 1], start)
+        let name = MeetingNames.part(number, start: start, end: end, tag: tag)
         var md = "# Meeting \(Self.dateTime(startedAt)), part \(number)\(code.map { " · \($0)" } ?? "")\n\n"
-        md += "\(Self.clock(window.start))–\(Self.clock(window.end)) into the call"
+        md += "\(Self.clock(start))–\(Self.clock(end)) into the call"
         if number > 1 { md += ", starting \(Int(Self.overlap)) s before part \(number - 1) ended" }
         md += ".\n\n"
-        if micOnly { md += Self.micOnlyNote }
-        md += Self.render(linesIn(window.start, window.end), micOnly: micOnly)
+        if micOnly { md += micOnlyNote }
+        md += Self.render(linesIn(start, end), micOnly: micOnly)
         return (number, name, md)
+    }
+
+    /// Names the voices in a mic-only meeting: `names` maps a mic line's start time to "Me" or
+    /// "Speaker 2". Lines it doesn't mention keep what they had.
+    public mutating func setVoices(_ names: [TimeInterval: String]) {
+        for i in lines.indices where lines[i].speaker == Self.me {
+            if let name = names[lines[i].start] { lines[i].voice = name }
+        }
     }
 
     /// The whole meeting so far.
     public func fullMarkdown(now: TimeInterval) -> String {
         var md = "# Meeting \(Self.dateTime(startedAt))\(code.map { " · \($0)" } ?? "")\n\n"
         md += "Length \(Self.clock(now)) · \(partEnds.count) part\(partEnds.count == 1 ? "" : "s") saved\n\n"
-        if micOnly { md += Self.micOnlyNote }
+        if micOnly { md += micOnlyNote }
         md += Self.render(lines, micOnly: micOnly)
         return md
     }
@@ -95,7 +114,10 @@ public struct MeetingTranscript: Sendable {
     /// part of one meeting uses the same label.
     public var micOnly: Bool { !lines.isEmpty && !lines.contains { $0.speaker == Self.them } }
     public static let room = "Room"
-    static let micOnlyNote = "_Mic only: no computer audio, so every voice is from the mic and labeled Room._\n\n"
+    static let roomNote = "_Mic only: no computer audio, so every voice is from the mic and labeled Room._\n\n"
+    /// Once the voices have been told apart (2026-11-26), the note says how far to trust the names.
+    static let voicesNote = "_Mic only: no computer audio, so every voice is from the mic. Voices are told apart by sound: Me is the voice that matches your dictations, the others are numbered in the order they first spoke. A name can be wrong, most often on short lines and when people talk over each other._\n\n"
+    var micOnlyNote: String { lines.contains { $0.voice != nil } ? Self.voicesNote : Self.roomNote }
 
     func linesIn(_ start: TimeInterval, _ end: TimeInterval) -> [Line] {
         lines.filter { $0.end > start && $0.start < end }
@@ -112,7 +134,7 @@ public struct MeetingTranscript: Sendable {
 
     static func render(_ lines: [Line], micOnly: Bool = false) -> String {
         let kept = dropEcho(lines).map { l in
-            micOnly && l.speaker == me ? Line(speaker: room, start: l.start, end: l.end, text: l.text) : l
+            micOnly && l.speaker == me ? Line(speaker: l.voice ?? room, start: l.start, end: l.end, text: l.text) : l
         }
         var out: [String] = []
         var current: (speaker: String, start: TimeInterval, end: TimeInterval, texts: [String])?

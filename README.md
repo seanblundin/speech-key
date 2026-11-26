@@ -22,6 +22,7 @@ Download the signed app at **[speechkeyapp.com](https://speechkeyapp.com)**. It 
 - **⌃⌥ fn** starts and ends a meeting. **⌃ fn** saves a snapshot of everything so far and copies the file's path.
 - Two streams are transcribed: **Me** (the mic) and **Them** (whatever the Mac plays: Zoom, Meet, Teams, FaceTime).
 - Files are written only when you take a snapshot or end the meeting, to `~/Documents/Speech Key Meetings/2026-10-22_1547_x7bm3z/`. Every file ends with that folder name (`full_2026-10-22_1547_x7bm3z.md` holds everything; each `part-…` overlaps the previous one by 10 seconds), and the six-character code is unique to the meeting, so searching Finder for it finds them all. The Meetings tab shows each meeting's code; click it to copy.
+- **In-person meetings and calls on speaker** (no computer audio, only the mic): the voices are told apart by sound. The saved files say **Me** for the voice that matches your own and **Speaker 1**, **Speaker 2**… for the others, in the order they first spoke. The names are written into the files a few seconds after each snapshot (a one-hour meeting takes about 15 s on an M2 Air). It runs on your Mac: FluidAudio's batch pipeline (pyannote segmentation, WeSpeaker voice fingerprints, VBx clustering; a 34 MB download the first time). On a real four-person meeting it gave about 84% of the words to the right person; most misses are people talking over each other. "Me" needs kept dictation recordings (`keepAudio`, below) to learn your voice from; without them everyone is numbered. Your voice fingerprint is 256 numbers in `voiceprint.json`, and it never leaves the Mac.
 - Many places require everyone's consent to record a call. Tell people when you start.
 
 ## How it works
@@ -62,6 +63,7 @@ SK="dist/Speech Key.app/Contents/MacOS/SpeechKey"
 "$SK" --test-paste                                   # the paste confirmation, without touching the keyboard
 "$SK" --render-pill /tmp/pill                        # PNG of every pill state and panel page, light and dark
 "$SK" --cleanup-replay fragment,repeat               # rerun today's cleanup rules over your logged dictations and list every cut
+"$SK" --test-voices room.wav                         # treat a recording as a mic-only meeting: transcribe it, name the voices, print the transcript
 .build/release/engine-bench --glossary g.md --clips clips.json clips/*.wav   # engine speed and accuracy
 ```
 
