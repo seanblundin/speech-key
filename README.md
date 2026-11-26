@@ -10,7 +10,8 @@ Download the signed app at **[speechkeyapp.com](https://speechkeyapp.com)**. It 
 - **Double-tap fn:** hands-free for long dictations. Tap fn again to finish.
 - **Hold ⇧ fn:** talk to the agent instead of typing: "Jammy should be Jimmy", "remove Jimmy", "start a meeting", "take a snapshot", "undo that". Apple's on-device model reads the command, so it stays on the Mac.
 - **Esc** cancels.
-- **The menu-bar panel** has three tabs:
+- **In the Dock and the menu bar.** The Dock icon and its dot show that Speech Key is running; clicking it opens the panel, and it never comes to the front on its own, so dictation keeps landing in the app you're using. The menu-bar icon is the quick way in. If the menu bar is too full to show it (macOS hides extra icons behind the notch without saying so), Speech Key tells you.
+- **The panel** has three tabs:
   - **History:** every dictation, newest first. Click to copy, double-click to fix a word and teach the glossary. When the cleanup changed anything, **View Raw** flips a row to the words exactly as heard (what was cut is tinted) and a click copies those instead.
   - **Meetings:** past meetings with titles and one-line summaries written on the Mac.
   - **Glossary:** an editable table of names Speech Key should spell your way.

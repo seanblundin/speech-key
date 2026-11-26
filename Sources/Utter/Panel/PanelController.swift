@@ -9,6 +9,10 @@ final class PanelController: NSObject, NSPopoverDelegate {
     private let popover = NSPopover()
     /// Called just before the panel opens, so it shows fresh state.
     var willOpen: (() -> Void)?
+    /// Called after it closes, so focus can go back to the app that had it.
+    var didClose: (() -> Void)?
+    /// Where the panel hangs from when the menu-bar icon isn't on screen (a full menu bar).
+    private var anchor: NSWindow?
 
     init(model: PanelModel) {
         self.model = model
@@ -38,6 +42,31 @@ final class PanelController: NSObject, NSPopoverDelegate {
         popover.contentViewController?.view.window?.makeKey()
     }
 
+    /// Opens the panel with no menu-bar icon to hang it from (the icon is hidden behind a full
+    /// menu bar): from the top-right corner of the screen, where the icon would be.
+    func openWithoutIcon() {
+        guard !popover.isShown, let screen = NSScreen.main else { return }
+        let frame = NSRect(x: screen.visibleFrame.maxX - 60, y: screen.visibleFrame.maxY - 2, width: 24, height: 2)
+        let window = anchor ?? {
+            let w = NSWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
+            w.isOpaque = false
+            w.backgroundColor = .clear
+            w.level = .statusBar
+            w.ignoresMouseEvents = true
+            w.isReleasedWhenClosed = false
+            w.contentView = NSView(frame: NSRect(origin: .zero, size: frame.size))
+            return w
+        }()
+        anchor = window
+        window.setFrame(frame, display: false)
+        window.orderFrontRegardless()
+        guard let view = window.contentView else { return }
+        willOpen?()
+        NSApp.activate(ignoringOtherApps: true)
+        popover.show(relativeTo: view.bounds, of: view, preferredEdge: .minY)
+        popover.contentViewController?.view.window?.makeKey()
+    }
+
     func close() { popover.performClose(nil) }
 
     func popoverDidClose(_ notification: Notification) {
@@ -46,5 +75,7 @@ final class PanelController: NSObject, NSPopoverDelegate {
         model.editing = nil
         model.renaming = nil
         if model.page == .settings { model.page = .history }
+        anchor?.orderOut(nil)
+        didClose?()
     }
 }

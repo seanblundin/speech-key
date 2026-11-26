@@ -10,10 +10,16 @@ final class SetupModel: ObservableObject {
     @Published var paste = false
     @Published var globe = false
     @Published var engine: DictationController.EngineState = .loading
+    /// The first-time model download, 0 to 1; nil when nothing is downloading.
+    @Published var download: Double?
+    /// The menu bar is too full to show Speech Key's icon.
+    @Published var iconHidden = false
 
     var allDone: Bool { mic && keys && paste && globe && engine == .ready }
 
-    func refresh(engine state: DictationController.EngineState) {
+    func refresh(engine state: DictationController.EngineState, download: Double? = nil, iconHidden: Bool = false) {
+        self.download = download
+        self.iconHidden = iconHidden
         mic = Permissions.mic == .granted
         micAsked = Permissions.mic != .notAsked
         keys = Permissions.keys
@@ -38,12 +44,17 @@ struct SetupView: View {
                 }
                 .frame(width: 46, height: 46)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("SpeechKey").font(.system(size: 20, weight: .semibold, design: .rounded))
+                    Text("Speech Key").font(.system(size: 20, weight: .semibold, design: .rounded))
                     Text("Hold fn and talk. Everything stays on this Mac.").foregroundStyle(.secondary)
                 }
             }
 
             VStack(spacing: 0) {
+                // First, so it's plain the download is already running while the rest is set up
+                // (Sean, 2026-11-26: it looked like the download only began after the other steps).
+                SetupRow(done: model.engine == .ready, title: "Speech model", detail: engineDetail, button: nil,
+                         progress: model.engine == .loading ? model.download : nil) {}
+                Divider().padding(.leading, 38)
                 SetupRow(done: model.mic, title: "Microphone",
                          detail: "To hear you. Audio is never saved or sent anywhere.",
                          button: model.mic ? nil : (model.micAsked ? "Open Settings" : "Allow")) {
@@ -67,8 +78,6 @@ struct SetupView: View {
                 SetupRow(done: model.globe, title: "Globe key set to Do Nothing",
                          detail: "Keyboard → “Press 🌐 key to” → Do Nothing, so fn doesn’t also open emoji.",
                          button: model.globe ? nil : "Open Settings") { Permissions.openKeyboardSettings() }
-                Divider().padding(.leading, 38)
-                SetupRow(done: model.engine == .ready, title: "Speech model", detail: engineDetail, button: nil) {}
             }
             .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.primary.opacity(0.04)))
 
@@ -77,6 +86,10 @@ struct SetupView: View {
                     Label("Hold fn to talk, let go to paste", systemImage: "keyboard")
                     Label("Double-tap fn for hands-free, tap fn to finish", systemImage: "hand.raised")
                     Label("Esc cancels", systemImage: "escape")
+                    Label(model.iconHidden ? "Your menu bar is full, so my icon is hidden. Hold ⌘ and drag one off to make room."
+                                           : "History and settings are under this icon in your menu bar",
+                          systemImage: "waveform")
+                        .foregroundStyle(model.iconHidden ? Color.orange : Color.secondary)
                 }
                 .font(.callout)
                 .foregroundStyle(.secondary)
@@ -92,8 +105,11 @@ struct SetupView: View {
 
     private var engineDetail: String {
         switch model.engine {
-        case .loading: return "Downloading Parakeet (about 0.5 GB, first launch only)…"
-        case .ready: return "Parakeet Ultra on the Neural Engine, ready."
+        case .loading:
+            guard let done = model.download else { return "Getting ready…" }
+            let total = 0.7
+            return String(format: "Downloading while you set up the rest: %.1f of %.1f GB. One time only; after this it works offline.", done * total, total)
+        case .ready: return "On this Mac and ready. Nothing you say leaves it."
         case .failed(let why): return "Couldn’t load: \(why)"
         }
     }
@@ -104,6 +120,8 @@ private struct SetupRow: View {
     let title: String
     let detail: String
     let button: String?
+    /// A download in progress, 0 to 1.
+    var progress: Double? = nil
     let action: () -> Void
 
     var body: some View {
@@ -116,6 +134,9 @@ private struct SetupRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.system(size: 13, weight: .medium))
                 Text(detail).font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                if let progress {
+                    ProgressView(value: min(max(progress, 0), 1)).progressViewStyle(.linear).controlSize(.small).padding(.top, 3)
+                }
             }
             Spacer(minLength: 8)
             if let button { Button(button, action: action) }
@@ -131,10 +152,14 @@ final class SetupWindowController {
     private var window: NSWindow?
     private var timer: Timer?
     var engineState: () -> DictationController.EngineState = { .loading }
+    var download: () -> Double? = { nil }
+    var iconHidden: () -> Bool = { false }
     var onAllDone: (() -> Void)?
+    /// Called when the window closes, so focus can go back to the app that had it.
+    var onClose: (() -> Void)?
 
     func show() {
-        model.refresh(engine: engineState())
+        model.refresh(engine: engineState(), download: download(), iconHidden: iconHidden())
         if window == nil {
             let w = NSWindow(contentRect: .zero, styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
             w.titlebarAppearsTransparent = true
@@ -147,11 +172,11 @@ final class SetupWindowController {
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 let wasDone = self.model.allDone
-                self.model.refresh(engine: self.engineState())
+                self.model.refresh(engine: self.engineState(), download: self.download(), iconHidden: self.iconHidden())
                 if !wasDone && self.model.allDone { self.onAllDone?() }
             }
         }
@@ -161,6 +186,7 @@ final class SetupWindowController {
         timer?.invalidate()
         timer = nil
         window?.orderOut(nil)
+        onClose?()
     }
 
     var isVisible: Bool { window?.isVisible == true }

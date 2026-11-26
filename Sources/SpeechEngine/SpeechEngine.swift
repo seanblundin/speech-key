@@ -63,21 +63,44 @@ public actor SpeechEngine {
     /// Loads (downloading on first use) the Parakeet model and, if `boostNames`, the small CTC
     /// model that checks transcripts against vocabulary terms.
     /// Every model file is checked against `ModelManifest` before it's loaded.
-    public init(model: EngineModel = .ultra, boostNames: Bool = true) async throws {
+    /// `progress` reports the first-time download, 0 to 1 across both models; it isn't called
+    /// when the files are already on the Mac.
+    public init(model: EngineModel = .ultra, boostNames: Bool = true, progress: (@Sendable (Double) -> Void)? = nil) async throws {
         self.model = model
-        let folder = try await AsrModels.download(version: model.fluid)
+        // The main model is about six times the size of the name-boosting one.
+        let share = boostNames ? 0.86 : 1.0
+        let folder = try await AsrModels.download(version: model.fluid, progressHandler: { p in
+            if case .downloading = p.phase { progress?(p.fractionCompleted * share) }
+        })
         try ModelIntegrity.verify(folder)
         let models = try await AsrModels.load(from: folder, version: model.fluid)
         let manager = AsrManager(config: .default)
         try await manager.loadModels(models)
         self.asr = manager
         if boostNames {
+            // FluidAudio reports no progress for this one, so watch its folder grow (about 99 MB).
+            let ctcHome = folder.deletingLastPathComponent().appendingPathComponent("parakeet-ctc-110m-coreml")
+            let watch: Task<Void, Never>? = progress == nil || FileManager.default.fileExists(atPath: ctcHome.path) ? nil : Task {
+                while !Task.isCancelled {
+                    let fraction = min(1, Double(Self.bytes(in: ctcHome)) / 99_000_000)
+                    progress?(share + fraction * (1 - share))
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                }
+            }
+            defer { watch?.cancel() }
             let ctcFolder = try await CtcModels.download()
             try ModelIntegrity.verify(ctcFolder)
             self.ctcModels = try await CtcModels.load(from: ctcFolder)
         } else {
             self.ctcModels = nil
         }
+    }
+
+    private static func bytes(in folder: URL) -> Int {
+        guard let walker = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: [.fileSizeKey]) else { return 0 }
+        var total = 0
+        for case let url as URL in walker { total += (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0 }
+        return total
     }
 
     /// Transcribe one chunk. `hints` are names to favor (spellings only, no aliases).

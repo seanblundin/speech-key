@@ -28,6 +28,8 @@ final class DictationController: FnKeyMonitorDelegate {
     }
 
     private(set) var engineState: EngineState = .loading { didSet { onChange?() } }
+    /// How far the first-time model download is, 0 to 1; nil when nothing is downloading.
+    private(set) var downloadProgress: Double?
     /// Called whenever something the menu or setup window shows has changed.
     var onChange: (() -> Void)?
     /// Every finished dictation, for the panel's history.
@@ -94,8 +96,11 @@ final class DictationController: FnKeyMonitorDelegate {
         reloadGlossaryIfChanged()
         Task {
             do {
-                let e = try await SpeechEngine(model: .ultra, boostNames: true)
+                let e = try await SpeechEngine(model: .ultra, boostNames: true) { [weak self] fraction in
+                    Task { @MainActor in self?.downloadProgress = fraction }
+                }
                 engine = e
+                downloadProgress = nil
                 engineState = .ready
                 UtterLog.write("engine ready")
                 _ = try? await PauseChunker.make()   // load VAD now rather than on the first long dictation

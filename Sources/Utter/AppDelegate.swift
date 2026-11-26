@@ -15,6 +15,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panel: PanelController!
     private var titler: MeetingTitler?
     private var accessibilityPoll: Timer?
+    /// The app that was in front before Speech Key's panel or setup window took focus.
+    private var appBefore: NSRunningApplication?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         MainActor.assumeIsolated { launch() }
@@ -38,6 +40,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         fnMonitor = FnKeyMonitor()
         setup = SetupWindowController()
         setup.engineState = { [weak self] in self?.controller.engineState ?? .loading }
+        setup.download = { [weak self] in self?.controller.downloadProgress }
+        setup.iconHidden = { [weak self] in self?.menuBarIconHidden ?? false }
+        setup.onClose = { [weak self] in self?.giveFocusBack() }
         setup.onAllDone = { [weak self] in
             self?.controller.pill.show(.message("Ready · hold 🌐 and talk"), autoHideAfter: 2.5)
         }
@@ -78,7 +83,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel = PanelController(model: makePanelModel(brain: brain))
         panel.model.titler = titler
         titler.onUpdate = { [weak self] in self?.panel?.model.refreshMeetings() }
-        panel.willOpen = { [weak self] in self?.refreshPanel() }
+        panel.willOpen = { [weak self] in self?.rememberAppInFront(); self?.refreshPanel() }
+        panel.didClose = { [weak self] in self?.giveFocusBack() }
+        if !testing { NSApp.mainMenu = makeMainMenu(); watchAppInFront() }
         // Remote control, so Claude can take a snapshot or end a meeting on Sean's behalf:
         //   com.seanblundin.utter.meeting.snapshot / .end
         // There is no remote "start": any app can post these, and starting turns on the mic.
@@ -240,9 +247,111 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let firstLaunch = !UserDefaults.standard.bool(forKey: "setupShown")
         if firstLaunch || !Permissions.keys || !Permissions.globeKeyDoesNothing {
             UserDefaults.standard.set(true, forKey: "setupShown")
+            rememberAppInFront()
             setup.show()
+        } else {
+            // Opened at login or by hand with nothing to show: don't sit in front of the app the
+            // user is working in, or their next dictation would have nowhere to land.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                guard let self, NSApp.isActive, !self.panel.isOpen, !self.setup.isVisible else { return }
+                if let before = self.appBefore { before.activate() } else { NSApp.deactivate() }
+            }
         }
     }
+
+    // MARK: - Dock and menus
+
+    /// Clicking the Dock icon (or opening the app again) shows the panel, hanging from the
+    /// menu-bar icon when there is one, so people learn where it lives.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        MainActor.assumeIsolated {
+            if setup.isVisible { NSApp.activate(ignoringOtherApps: true); return }
+            if panel.isOpen { panel.close(); return }      // a second click puts it away, like the menu-bar icon
+            if let button = statusItem?.button, !menuBarIconHidden { panel.open(from: button) } else { panel.openWithoutIcon() }
+        }
+        return false
+    }
+
+    /// The menu bar is too full to show the icon. macOS keeps laying icons out to the left, under
+    /// the notch and off the screen, with no sign that any are missing (measured 2026-11-26).
+    private var menuBarIconHidden: Bool {
+        guard let window = statusItem?.button?.window, let screen = window.screen ?? NSScreen.main else { return false }
+        if let rightOfNotch = screen.auxiliaryTopRightArea { return window.frame.minX < rightOfNotch.minX - 1 }
+        return window.frame.minX < screen.frame.minX
+    }
+
+    private func rememberAppInFront() {
+        if let front = NSWorkspace.shared.frontmostApplication, front.processIdentifier != ProcessInfo.processInfo.processIdentifier {
+            appBefore = front
+        }
+    }
+
+    /// Keeps `appBefore` current: a Dock click brings Speech Key to the front before any of its code
+    /// runs, so by then it is too late to ask who was in front.
+    private func watchAppInFront() {
+        rememberAppInFront()
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                  app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
+            MainActor.assumeIsolated { self?.appBefore = app }
+        }
+    }
+
+    /// When the panel or setup window closes and Speech Key is still the app in front, hands focus
+    /// back, so the next dictation lands where the user was working. (A menu-bar-only app got this
+    /// from macOS for free; an app in the Dock stays in front with no window.)
+    private func giveFocusBack() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            guard let self, NSApp.isActive, !self.panel.isOpen, !self.setup.isVisible,
+                  !NSApp.windows.contains(where: { $0.isVisible && $0.canBecomeMain }) else { return }
+            self.appBefore?.activate()
+        }
+    }
+
+    /// The standard menus an app in the Dock is expected to have. Edit also makes ⌘C, ⌘V, ⌘X and
+    /// ⌘A work in the panel's text fields.
+    private func makeMainMenu() -> NSMenu {
+        let main = NSMenu()
+        func add(_ title: String, _ items: [NSMenuItem]) {
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            let menu = NSMenu(title: title)
+            items.forEach(menu.addItem)
+            item.submenu = menu
+            main.addItem(item)
+        }
+        func item(_ title: String, _ action: Selector?, _ key: String = "", target: AnyObject? = nil) -> NSMenuItem {
+            let i = NSMenuItem(title: title, action: action, keyEquivalent: key)
+            i.target = target
+            return i
+        }
+        add("Speech Key", [
+            item("About Speech Key", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
+            .separator(),
+            item("Open Speech Key", #selector(openPanelFromMenu), "o", target: self),
+            item("Setup…", #selector(openSetupFromMenu), target: self),
+            .separator(),
+            item("Hide Speech Key", #selector(NSApplication.hide(_:)), "h"),
+            .separator(),
+            item("Quit Speech Key", #selector(NSApplication.terminate(_:)), "q"),
+        ])
+        add("Edit", [
+            item("Undo", Selector(("undo:")), "z"),
+            item("Redo", Selector(("redo:")), "Z"),
+            .separator(),
+            item("Cut", #selector(NSText.cut(_:)), "x"),
+            item("Copy", #selector(NSText.copy(_:)), "c"),
+            item("Paste", #selector(NSText.paste(_:)), "v"),
+            item("Select All", #selector(NSText.selectAll(_:)), "a"),
+        ])
+        add("Window", [
+            item("Close", #selector(NSWindow.performClose(_:)), "w"),
+            item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m"),
+        ])
+        return main
+    }
+
+    @objc private func openPanelFromMenu() { _ = applicationShouldHandleReopen(NSApp, hasVisibleWindows: false) }
+    @objc private func openSetupFromMenu() { panel.close(); rememberAppInFront(); setup.show() }
 
     /// Plays scripted fn presses through the real rules, mic, engine and pill, and prints every pill
     /// state with its time. Never pastes. `SpeechKey --simulate-keys "d0 u80 d200 u270 d3000 u3080 end6000"`
@@ -418,7 +527,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             openMeetingsFolder: { [weak self] in self?.meeting.openFolder() },
             openGlossary: { NSWorkspace.shared.open(URL(fileURLWithPath: UtterPaths.glossary)) },
             openLog: { Self.revealLog() },
-            showSetup: { [weak self] in self?.panel.close(); self?.setup.show() },
+            showSetup: { [weak self] in self?.panel.close(); self?.rememberAppInFront(); self?.setup.show() },
             setLaunchAtLogin: { [weak self] on in self?.setLaunchAtLogin(on) },
             chooseGlossary: { [weak self] in self?.chooseGlossary() },
             chooseMeetingsFolder: { [weak self] in self?.chooseMeetingsFolder() },
@@ -466,6 +575,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !Permissions.globeKeyDoesNothing {
             problems.append(.init(id: "globe", text: "Set “Press 🌐 key to” Do Nothing, or fn also opens emoji.", button: "Open Settings") {
                 Permissions.openKeyboardSettings()
+            })
+        }
+        if menuBarIconHidden {
+            problems.append(.init(id: "icon", text: "Your menu bar is full, so my icon is hidden. Hold ⌘ and drag an icon you don’t need off the bar; I’m quickest to reach from there.",
+                                  button: "Menu Bar Settings") {
+                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.ControlCenter-Settings.extension")!)
             })
         }
         m.problems = problems

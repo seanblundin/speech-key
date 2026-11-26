@@ -17,11 +17,9 @@
 	<key>CFBundleShortVersionString</key>
 	<string>0.2.4</string>
 	<key>CFBundleVersion</key>
-	<string>11</string>
+	<string>12</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.2</string>
-	<key>LSUIElement</key>
-	<true/>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>In meeting mode, Speech Key transcribes the call audio playing on this Mac. It stays on this Mac and is only written to files when you save a snapshot.</string>
 	<key>NSHighResolutionCapable</key>

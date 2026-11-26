@@ -150,6 +150,18 @@ enum PanelRenderer {
                                    to: "\(dir)/\(name)-\(suffix).png", appearance: appearance)
             }
         }
+        // The first-run window: mid-download with nothing granted yet, and all done with a full menu bar.
+        let fresh = SetupModel()
+        fresh.download = 0.43
+        let done = SetupModel()
+        done.mic = true; done.micAsked = true; done.keys = true; done.paste = true; done.globe = true
+        done.engine = .ready; done.iconHidden = true
+        for (name, model) in [("setup-1-downloading", fresh), ("setup-2-done-icon-hidden", done)] {
+            for (suffix, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+                PillRenderer.write(SetupView(model: model) {}.background(Color(nsColor: .windowBackgroundColor)),
+                                   to: "\(dir)/\(name)-\(suffix).png", appearance: appearance)
+            }
+        }
         print("rendered panel to \(dir)")
     }
 }
