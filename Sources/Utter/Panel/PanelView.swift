@@ -582,6 +582,7 @@ private struct MeetingRow: View {
     private var renaming: Bool { model.renaming == meeting.folder }
     private var copied: Bool { model.copiedMeeting == meeting.folder }
     private var titling: Bool { model.titling.contains(meeting.folder) }
+    private var namingVoices: Bool { model.namingVoicesIn == meeting.folder }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -630,18 +631,120 @@ private struct MeetingRow: View {
                     }
                 }
                 Spacer(minLength: 6)
+                if !meeting.voices.isEmpty {
+                    VoicesChip(voices: meeting.voices, open: namingVoices) { model.toggleVoices(meeting) }
+                }
                 if let code = meeting.code { CodeChip(code: code, copied: model.copiedCode == meeting.folder) { model.copyCode(meeting) } }
             }
             .font(.system(size: 11)).foregroundStyle(.tertiary).lineLimit(1)
+            if namingVoices { WhoIsWho(model: model).padding(.top, 8) }
         }
         .padding(.horizontal, 12).padding(.vertical, 9)
         .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .fill(copied ? Color(nsColor: .systemGreen).opacity(0.08) : Color.primary.opacity(hovering || renaming ? 0.05 : 0)))
+            .fill(copied ? Color(nsColor: .systemGreen).opacity(0.08) : Color.primary.opacity(hovering || renaming || namingVoices ? 0.05 : 0)))
         .contentShape(Rectangle())
         .onTapGesture { if !renaming { model.copyMeeting(meeting) } }
         .onHover { hovering = $0 }
         .onChange(of: titleFocused) { focused in if !focused && renaming { model.rename(meeting, to: draft) } }
         .help("Click to copy the path: \(meeting.mainFile.path)")
+    }
+}
+
+/// How many voices a meeting has besides the user's own, or how many of them have names. A quiet
+/// way in to naming them: there for whoever wants it, never in the way (Sean, 2026-11-26).
+private struct VoicesChip: View {
+    let voices: [MeetingMeta.Voice]
+    let open: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    private var named: Int { voices.filter { $0.name != nil }.count }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 3) {
+                Image(systemName: "person.2.fill").font(.system(size: 9))
+                Text(named == 0 ? "\(voices.count)" : named == voices.count ? "named" : "\(named) of \(voices.count)")
+                    .font(.system(size: 10.5, weight: .medium))
+            }
+            .foregroundStyle(open ? AnyShapeStyle(PillModel.utterTint) : hovering ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tertiary))
+            .padding(.horizontal, 6).padding(.vertical, 1.5)
+            .background(RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .fill(open ? PillModel.utterTint.opacity(0.14) : Color.primary.opacity(hovering ? 0.09 : 0.05)))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(voices.count == 1 ? "Put a name on the other voice in this meeting" : "Put names on the \(voices.count) other voices in this meeting")
+    }
+}
+
+/// The voices of one meeting, each with what to recognize them by: a line on what set them apart,
+/// and a few things they said. Type a name and it replaces "Speaker 2" in that meeting's files.
+private struct WhoIsWho: View {
+    @ObservedObject var model: PanelModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(model.voiceCards) { card in VoiceCardView(card: card, model: model) }
+            Text("A name goes into this meeting’s files only. Nothing about anyone’s voice is kept.")
+                .font(.system(size: 10.5)).foregroundStyle(.tertiary).padding(.horizontal, 2)
+        }
+        // Clicks in here are for the fields, not for copying the meeting's path.
+        .contentShape(Rectangle())
+        .onTapGesture {}
+    }
+}
+
+private struct VoiceCardView: View {
+    let card: PanelModel.VoiceCard
+    @ObservedObject var model: PanelModel
+    @State private var draft = ""
+    @FocusState private var focused: Bool
+
+    private var changed: Bool { draft.trimmingCharacters(in: .whitespaces) != card.name }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                TextField("Who is \(card.label)?", text: $draft)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13, weight: .semibold))
+                    .focused($focused)
+                    .onSubmit { model.nameVoice(card.label, as: draft) }
+                    .padding(.horizontal, 8).frame(height: 26)
+                    .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.primary.opacity(focused ? 0.09 : 0.055)))
+                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(Color.accentColor.opacity(focused ? 0.5 : 0), lineWidth: 1))
+                Group {
+                    if focused && changed { Text("↩ save") }
+                    else if !card.name.isEmpty { Text("was \(card.label)") }
+                    else { Text("\(card.words) words") }
+                }
+                .font(.system(size: 11)).foregroundStyle(.tertiary).fixedSize()
+            }
+            if let about = card.about {
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Image(systemName: "sparkle").font(.system(size: 9, weight: .semibold)).foregroundStyle(PillModel.utterTint)
+                    Text(about).font(.system(size: 12)).foregroundStyle(.primary.opacity(0.85)).fixedSize(horizontal: false, vertical: true)
+                }
+            } else if card.aboutPending {
+                Text("Reading what they said…").font(.system(size: 12)).foregroundStyle(.tertiary)
+            }
+            ForEach(Array(card.quotes.enumerated()), id: \.offset) { _, quote in
+                HStack(alignment: .firstTextBaseline, spacing: 7) {
+                    Text(quote.clock).font(.system(size: 10.5, design: .monospaced)).foregroundStyle(.tertiary)
+                        .frame(width: 36, alignment: .trailing)
+                    Text("“\(quote.text)”").font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.primary.opacity(0.045)))
+        .onAppear { draft = card.name }
+        .onChange(of: card.name) { draft = $0 }
+        .onChange(of: focused) { now in if !now && changed { model.nameVoice(card.label, as: draft) } }
     }
 }
 

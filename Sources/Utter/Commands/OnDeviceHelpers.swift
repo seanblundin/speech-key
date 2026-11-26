@@ -188,6 +188,46 @@ enum OnDeviceMeetingTitle {
 }
 #endif
 
+// MARK: - What set one voice apart
+
+/// One sentence on what a voice in a meeting talked about, so someone who was there can tell who
+/// it was. Written on the Mac; nil when Apple Intelligence isn't there or it declines.
+enum VoiceNote {
+    static func write(said: String) async -> String? {
+        #if canImport(FoundationModels)
+        if #available(macOS 26.0, *) { return await OnDeviceVoiceNote.generate(said) }
+        #endif
+        return nil
+    }
+}
+
+#if canImport(FoundationModels)
+@available(macOS 26.0, *)
+enum OnDeviceVoiceNote {
+    /// No example sentence on purpose: given one, the model handed it back word for word for two
+    /// of four real voices, and made up a name and a job title for one (2026-11-26).
+    static let instructions = """
+    You read what one person said in a meeting. In one plain sentence of under 20 words, say which topics \
+    they raised and what they wanted, using only things they actually said. The reader was in the meeting \
+    and is trying to remember who this was. Begin with a verb in the past tense. Do not use anyone's name, \
+    a job title, or the words "speaker", "person" or "they".
+    """
+
+    static func generate(_ said: String) async -> String? {
+        guard case .available = OnDeviceMeetingTitle.model.availability, said.split(separator: " ").count >= 12 else { return nil }
+        do {
+            let session = LanguageModelSession(model: OnDeviceMeetingTitle.model, instructions: instructions)
+            let r = try await session.respond(to: "What this person said:\n\n\(said.prefix(5_000))",
+                                              options: GenerationOptions(sampling: .greedy, maximumResponseTokens: 60))
+            return MeetingVoicesFile.tidyNote(r.content)
+        } catch {
+            UtterLog.write("voice note failed: \(error)")
+            return nil
+        }
+    }
+}
+#endif
+
 // MARK: - Glossary rows with a condition
 
 /// Decides the glossary fixes that need judgment: rows whose notes set a condition ("only in

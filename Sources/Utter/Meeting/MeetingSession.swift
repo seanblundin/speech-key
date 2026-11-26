@@ -271,6 +271,8 @@ final class MeetingSession {
         if let newest { try? newest.write(to: folder.appendingPathComponent(MeetingNames.latest(tag)), atomically: true, encoding: .utf8) }
         try? transcript.fullMarkdown(now: transcript.partEnds.last ?? elapsed)
             .write(to: folder.appendingPathComponent(MeetingNames.full(tag)), atomically: true, encoding: .utf8)
+        // The Meetings tab looks at the voices again the next time it lists this meeting.
+        if MeetingMeta.load(folder)?.voices != nil { MeetingMeta.update(folder) { $0.voices = nil } }
     }
 
     /// For tests: waits until the voices have been named.

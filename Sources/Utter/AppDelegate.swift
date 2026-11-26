@@ -35,7 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let i = args.firstIndex(of: name), i + 1 < args.count else { return nil }
             return args[i + 1]
         }
-        let testing = args.contains { $0.hasPrefix("--simulate") || $0 == "--render-pill" || $0 == "--test-meeting" || $0 == "--test-voices" || $0 == "--test-line-voices" || $0 == "--replay-commands" || $0 == "--test-paste" || $0 == "--test-titles" || $0 == "--test-update-check" || $0 == "--give-codes" || $0 == "--verify-models" }
+        let testing = args.contains { $0.hasPrefix("--simulate") || $0 == "--render-pill" || $0 == "--test-meeting" || $0 == "--test-voices" || $0 == "--test-line-voices" || $0 == "--replay-commands" || $0 == "--test-name-voices" || $0 == "--test-paste" || $0 == "--test-titles" || $0 == "--test-update-check" || $0 == "--give-codes" || $0 == "--verify-models" }
         if testing { controller.log.enabled = false }
         fnMonitor = FnKeyMonitor()
         setup = SetupWindowController()
@@ -82,6 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.onCommand = { [weak self] text, raw in self?.commands.run(text, raw: raw) }
         panel = PanelController(model: makePanelModel(brain: brain))
         panel.model.titler = titler
+        panel.model.describeVoice = { said in await VoiceNote.write(said: said) }
         titler.onUpdate = { [weak self] in self?.panel?.model.refreshMeetings() }
         panel.willOpen = { [weak self] in self?.rememberAppInFront(); self?.refreshPanel() }
         panel.didClose = { [weak self] in self?.giveFocusBack() }
@@ -257,6 +258,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + seconds / 2) { self.meeting.snapshot() }
             DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { self.meeting.end() }
             DispatchQueue.main.asyncAfter(deadline: .now() + seconds + 8) { NSApp.terminate(nil) }
+            return
+        }
+        if let folder = arg("--test-name-voices") {
+            // SpeechKey --test-name-voices <meeting folder>: what the Meetings tab shows for each
+            // voice, then names the first one and puts it back. Use a copy of a meeting.
+            Task {
+                let dir = URL(fileURLWithPath: folder)
+                MeetingMeta.update(dir) { $0.voices = MeetingLibrary.scanVoices(dir) }
+                let paragraphs = MeetingLibrary.paragraphs(dir)
+                let voices = MeetingMeta.load(dir)?.voices ?? []
+                for v in voices {
+                    let started = Date()
+                    let about = await VoiceNote.write(said: MeetingVoicesFile.said(by: v.label, in: paragraphs))
+                    print("\n\(v.label) · \(MeetingVoicesFile.words(of: v.label, in: paragraphs)) words")
+                    print(String(format: "  about (%.1fs): %@", Date().timeIntervalSince(started), about ?? "(none)"))
+                    for q in MeetingVoicesFile.quotes(of: v.label, in: paragraphs) { print("  \(q.clock)  “\(q.text)”") }
+                }
+                if let first = voices.first {
+                    let file = MeetingLibrary.transcriptFile(dir)!
+                    let before = try! String(contentsOf: file, encoding: .utf8)
+                    print("\nname:", MeetingLibrary.nameVoice(dir, label: first.label, as: "Test Person"))
+                    let named = try! String(contentsOf: file, encoding: .utf8)
+                    print("paragraphs now by Test Person:", MeetingVoicesFile.paragraphs(named).filter { $0.voice == "Test Person" }.count,
+                          "· still by \(first.label):", MeetingVoicesFile.paragraphs(named).filter { $0.voice == first.label }.count)
+                    print("same name twice:", MeetingLibrary.nameVoice(dir, label: voices.count > 1 ? voices[1].label : first.label, as: "test person"))
+                    print("back:", MeetingLibrary.nameVoice(dir, label: first.label, as: ""))
+                    print("file is as it started:", (try! String(contentsOf: file, encoding: .utf8)) == before)
+                }
+                fflush(stdout)
+                NSApp.terminate(nil)
+            }
             return
         }
         if args.contains("--replay-commands") {

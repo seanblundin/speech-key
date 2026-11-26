@@ -13,6 +13,21 @@ struct MeetingMeta: Codable, Equatable {
     var updated: Date?
     /// Times the on-device model failed to title it; after a few, older meetings aren't retried.
     var titleAttempts: Int?
+    /// The voices in this meeting that can be given a name (everyone but "Me"), in the order they
+    /// first spoke. nil until the transcript has been looked at. A name lives here and in this
+    /// meeting's files only: nothing about a voice is kept, so nothing carries to another meeting.
+    var voices: [Voice]?
+
+    struct Voice: Codable, Equatable {
+        /// The label the transcript was first written with: "Speaker 2" or "Them".
+        var label: String
+        /// The name the user gave; the files now say this in place of the label.
+        var name: String?
+        /// One sentence on what set this voice apart, written on the Mac to help recognize them.
+        var about: String?
+        /// What the files call this voice now.
+        var shown: String { name ?? label }
+    }
 
     static let fileName = ".speechkey-meeting.json"
 
@@ -53,6 +68,8 @@ struct MeetingSummary: Identifiable, Equatable {
     /// Snapshots, counting the part saved at the end (see `MeetingTranscript.snapshotCount`).
     /// Older meetings didn't store it, so their parts stand in.
     var snapshots: Int? = nil
+    /// The voices that can be named (see `MeetingMeta.voices`).
+    var voices: [MeetingMeta.Voice] = []
     var id: URL { folder }
 
     var snapshotCount: Int { snapshots ?? MeetingTranscript.snapshotCount(parts: parts) }
@@ -73,11 +90,63 @@ enum MeetingLibrary {
             let files = (try? fm.contentsOfDirectory(atPath: folder.path)) ?? []
             let parts = files.filter(MeetingNames.isPart)
             let length = parts.compactMap(MeetingNames.partEnd).max()
-            let meta = MeetingMeta.load(folder)
+            var meta = MeetingMeta.load(folder)
+            // The first time a finished meeting is listed, note which voices it has (cheap, and kept).
+            if meta?.voices == nil, !files.contains(MeetingRecovery.liveName), let found = scanVoices(folder) {
+                MeetingMeta.update(folder) { $0.voices = found }
+                meta = MeetingMeta.load(folder)
+            }
             return MeetingSummary(folder: folder, started: started, parts: parts.count, length: length,
-                                  title: meta?.title, summary: meta?.summary, titleBy: meta?.titleBy, snapshots: meta?.snapshots)
+                                  title: meta?.title, summary: meta?.summary, titleBy: meta?.titleBy, snapshots: meta?.snapshots,
+                                  voices: meta?.voices ?? [])
         }
         return Array(summaries.sorted { $0.started > $1.started }.prefix(limit))
+    }
+
+    // MARK: - Naming voices
+
+    /// The voices in a meeting's transcript that can be named; nil if it has no transcript yet.
+    static func scanVoices(_ folder: URL) -> [MeetingMeta.Voice]? {
+        guard let file = transcriptFile(folder), let text = try? String(contentsOf: file, encoding: .utf8) else { return nil }
+        return MeetingVoicesFile.voices(text).map { MeetingMeta.Voice(label: $0) }
+    }
+
+    /// The transcript's paragraphs, for quotes and word counts.
+    static func paragraphs(_ folder: URL) -> [MeetingVoicesFile.Paragraph] {
+        guard let file = transcriptFile(folder), let text = try? String(contentsOf: file, encoding: .utf8) else { return [] }
+        return MeetingVoicesFile.paragraphs(text)
+    }
+
+    enum Naming: Equatable { case named(String), unchanged, taken(String), notAName }
+
+    /// Puts a name on one voice in every transcript file of this meeting (the whole transcript,
+    /// the latest part and each part), or takes it off again when `name` is empty.
+    @discardableResult
+    static func nameVoice(_ folder: URL, label: String, as name: String) -> Naming {
+        guard var meta = MeetingMeta.load(folder), let i = meta.voices?.firstIndex(where: { $0.label == label }) else { return .unchanged }
+        let old = meta.voices![i].shown
+        let wanted = name.trimmingCharacters(in: .whitespaces)
+        let new: String
+        if wanted.isEmpty || wanted == label { new = label } else {
+            guard let usable = MeetingVoicesFile.usableName(wanted) else { return .notAName }
+            new = usable
+        }
+        guard new != old else { return .unchanged }
+        // Two voices with one name would merge in the files, and there'd be no telling them apart again.
+        if meta.voices!.enumerated().contains(where: { $0.offset != i && $0.element.shown.caseInsensitiveCompare(new) == .orderedSame }) { return .taken(new) }
+        let fm = FileManager.default
+        for file in (try? fm.contentsOfDirectory(atPath: folder.path)) ?? []
+        where MeetingNames.isFull(file) || MeetingNames.isLatest(file) || MeetingNames.isPart(file) {
+            let url = folder.appendingPathComponent(file)
+            guard let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            let renamed = MeetingVoicesFile.renaming(text, from: old, to: new)
+            if renamed != text { try? renamed.write(to: url, atomically: true, encoding: .utf8) }
+        }
+        meta.voices![i].name = new == label ? nil : new
+        meta.updated = Date()
+        meta.save(to: folder)
+        UtterLog.write("meeting \(folder.lastPathComponent): a voice was \(new == label ? "un-named" : "named")")
+        return .named(new)
     }
 
     /// "2026-10-22_1547" or "2026-10-22_1547_x7bm3z" → when the meeting started.

@@ -144,6 +144,48 @@ enum PanelRenderer {
         search.historySearch = "Niamh"
         shots.append(("panel-10-search", search))
 
+        // Naming the voices in a meeting: a real folder with a transcript, opened to its who's who.
+        let voicesFolder = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("speechkey-render/2026-11-04_1400_x7bm3z")
+        try? FileManager.default.createDirectory(at: voicesFolder, withIntermediateDirectories: true)
+        let sampleTranscript = """
+        # Meeting 2026-11-04 14:00 · x7bm3z
+
+        Length 14:11 · 1 part saved
+
+        _Voices are told apart by sound; the numbers follow the order people first spoke. On your mic: Me, Priya. On the computer's audio: Speaker 1. A name can be wrong, most often on short lines and when people talk over each other._
+
+        **[0:04] Speaker 1:** Thanks for making time. I mostly want to settle the launch date today, because marketing needs two weeks of notice before anything goes out.
+
+        **[0:31] Me:** That works. Where are we on the onboarding checklist?
+
+        **[0:48] Priya:** The three-step version is built and the progress bar is in. What I'm not sure about is whether people will finish step two without a nudge.
+
+        **[6:20] Speaker 1:** If we slip a week I'd rather know now than the Friday before. Can we agree nothing new goes in after Wednesday?
+
+        **[9:02] Priya:** I can live with that if the reminder email counts as already in. I'd also like five beta users to try it before we call it done.
+
+        **[13:40] Speaker 1:** Fine by me. I'll tell marketing the nineteenth and send the notes around tonight.
+
+        """
+        try? sampleTranscript.write(to: voicesFolder.appendingPathComponent("full_2026-11-04_1400_x7bm3z.md"), atomically: true, encoding: .utf8)
+        let sampleVoices = [
+            MeetingMeta.Voice(label: "Speaker 1", name: nil, about: "Pushed to lock the launch date and stop new work after Wednesday so marketing gets notice."),
+            MeetingMeta.Voice(label: "Speaker 2", name: "Priya", about: "Built the onboarding checklist and wanted beta users to try it before calling it done."),
+        ]
+        var sampleMeta = MeetingMeta()
+        sampleMeta.title = "Onboarding checklist with Priya"
+        sampleMeta.voices = sampleVoices
+        sampleMeta.save(to: voicesFolder)
+        let who = makeModel(page: .meetings)
+        who.meetings[0] = MeetingSummary(folder: voicesFolder, started: now.addingTimeInterval(-2400), parts: 1, length: 851,
+                                         title: "Onboarding checklist with Priya",
+                                         summary: "Priya wants a three-step onboarding checklist with a progress bar before the beta.",
+                                         titleBy: "agent", snapshots: 2, voices: sampleVoices)
+        who.meetings[1].voices = [MeetingMeta.Voice(label: "Speaker 1"), MeetingMeta.Voice(label: "Speaker 2"), MeetingMeta.Voice(label: "Speaker 3")]
+        who.meetings[3].voices = [MeetingMeta.Voice(label: "Them", name: "Dana")]
+        who.toggleVoices(who.meetings[0])
+        shots.append(("panel-12-whos-who", who))
+
         for (name, model) in shots {
             for (suffix, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
                 PillRenderer.write(PanelView(model: model, history: model.history, solidBackground: true),

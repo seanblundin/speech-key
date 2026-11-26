@@ -67,6 +67,11 @@ final class PanelModel: ObservableObject {
     @Published var titling: Set<URL> = []
     /// The meeting whose title is being typed.
     @Published var renaming: URL?
+    /// The meeting whose "who's who" is open in the Meetings tab, and its voices.
+    @Published var namingVoicesIn: URL?
+    @Published var voiceCards: [VoiceCard] = []
+    /// Writes one sentence about a voice from what they said (the on-device model).
+    var describeVoice: ((String) async -> String?)?
     @Published var prompt: GlossaryPrompt?
     @Published var toast: String?
     @Published var historySearch = ""
@@ -243,6 +248,61 @@ final class PanelModel: ObservableObject {
         }
         if t.isEmpty { titler?.title(m.folder) }
         refreshMeetings()
+    }
+
+    // MARK: - Naming the voices in a meeting
+
+    /// One voice in the open meeting: what to recognize them by, and their name if they have one.
+    struct VoiceCard: Identifiable, Equatable {
+        let label: String
+        var name: String
+        var about: String?
+        /// Still being written.
+        var aboutPending = false
+        let words: Int
+        let quotes: [MeetingVoicesFile.Quote]
+        var id: String { label }
+    }
+
+    /// Opens or closes the list of voices under a meeting. Opening it reads the transcript for a
+    /// few things each voice said, and asks the on-device model for a line about each.
+    func toggleVoices(_ m: MeetingSummary) {
+        if namingVoicesIn == m.folder { namingVoicesIn = nil; voiceCards = []; return }
+        let folder = m.folder
+        let paragraphs = MeetingLibrary.paragraphs(folder)
+        let voices = MeetingMeta.load(folder)?.voices ?? []
+        voiceCards = voices.map { v in
+            VoiceCard(label: v.label, name: v.name ?? "", about: v.about, aboutPending: v.about == nil && describeVoice != nil,
+                      words: MeetingVoicesFile.words(of: v.shown, in: paragraphs),
+                      quotes: MeetingVoicesFile.quotes(of: v.shown, in: paragraphs))
+        }
+        namingVoicesIn = folder
+        guard let describeVoice else { return }
+        Task { [weak self] in
+            for v in voices where v.about == nil {
+                let note = await describeVoice(MeetingVoicesFile.said(by: v.shown, in: paragraphs))
+                if let note { MeetingMeta.update(folder) { meta in
+                    if let i = meta.voices?.firstIndex(where: { $0.label == v.label }) { meta.voices?[i].about = note }
+                } }
+                guard let self, self.namingVoicesIn == folder, let i = self.voiceCards.firstIndex(where: { $0.label == v.label }) else { continue }
+                self.voiceCards[i].about = note
+                self.voiceCards[i].aboutPending = false
+            }
+        }
+    }
+
+    /// Writes a name over a voice's label in this meeting's files (an empty name puts the label back).
+    func nameVoice(_ label: String, as name: String) {
+        guard let folder = namingVoicesIn else { return }
+        switch MeetingLibrary.nameVoice(folder, label: label, as: name) {
+        case .named(let shown):
+            if let i = voiceCards.firstIndex(where: { $0.label == label }) { voiceCards[i].name = shown == label ? "" : shown }
+            showToast(shown == label ? "Back to \(label)" : "\(label) is \(shown) in this meeting")
+            refreshMeetings()
+        case .taken(let other): showToast("Another voice is already \(other)")
+        case .notAName: showToast("That can't be used as a name")
+        case .unchanged: break
+        }
     }
 
     /// The title a meeting shows anywhere in the panel.
