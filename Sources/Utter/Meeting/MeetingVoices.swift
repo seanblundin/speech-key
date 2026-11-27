@@ -113,7 +113,9 @@ enum MeetingVoices {
                 let pad = max(0, (1.2 - (line.end - line.start)) / 2)
                 let sound = StreamTape.samples(of: micTape, from: line.start - pad, to: line.end + pad)
                 let print = sound.count >= 8_000 ? try? await SpeakerSplitter.shared.fingerprint(sound) : nil
-                isMine.append(print.map { VoiceLabels.similarity($0, myLinePrint) >= VoiceLabels.mineNextTo } ?? false)
+                // The firm bar, not the lenient one: a similar-sounding voice on the call can reach 0.4,
+                // and a line wrongly taken for the user's stays on the page as their words.
+                isMine.append(print.map { VoiceLabels.similarity($0, myLinePrint) >= VoiceLabels.mineAtLeast } ?? false)
             }
             // With no way to know the user's voice at all, the older word check stands alone.
             if myVoice != nil || myLinePrint != nil {
